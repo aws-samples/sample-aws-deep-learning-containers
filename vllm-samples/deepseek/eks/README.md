@@ -2,11 +2,27 @@
 
 This repository contains scripts and configuration files to deploy a deepseek model using the AWS public vLLM deep learning container ECR image on an Amazon EKS cluster with GPU support (p4d.24xlarge instances with NVIDIA A100 GPUs), Elastic Fabric Adapter (EFA) for high-performance networking, and FSx Lustre for persistent model storage.
 
+![Architecture Diagram](media-files/architecture-diagram.png)
+
 ## Prerequisites
 
-- AWS CLI configured with appropriate permissions
-- eksctl, kubectl, and helm installed
-- An AWS account with necessary permissions
+Before getting started, ensure you have:
+•	An AWS account with access to amazon EC2 P4 instances (you may need to request a quota increase)
+•	Access to a terminal which has the below tools installed.
+o	AWS CLI version 2.11.0 or later
+o	eksctl version 0.150.0 or later
+o	kubectl version 1.27 or later
+o	Helm version 3.12.0 or later
+•	Configure a new aws cli profile (vllm-profile) with an IAM role/user that has the following permissions
+o	Create, manage, and delete EKS clusters and node groups
+o	Create, manage, and delete EC2 resources including VPCs, subnets, security groups, and internet gateways
+o	Create and manage IAM roles
+o	Create, update, and delete CloudFormation stacks
+o	Create, delete, and describe FSx file systems
+o	Create and manage Elastic Load Balancers
+
+### Regional Availability
+This solution can be deployed in any region where Amazon EKS, P4d instances, and Amazon FSx for Lustre are available. This guide uses the us-west-2 (Oregon) region.
 
 ### Setting Up AWS Profile for a New Account
 
@@ -27,103 +43,6 @@ You'll need to provide:
 - Default output format (e.g., json, table)
 - Session token (if using temporary credentials)
 
-### Required IAM Permissions
-
-The following IAM permissions are required to perform all the steps in this guide:
-
-#### EKS Permissions
-```
-eks:CreateCluster
-eks:DescribeCluster
-eks:UpdateClusterConfig
-eks:DeleteCluster
-eks:ListClusters
-eks:UpdateClusterVersion
-eks:DescribeUpdate
-eks:TagResource
-eks:UntagResource
-eks:ListTagsForResource
-eks:CreateNodegroup
-eks:DeleteNodegroup
-eks:DescribeNodegroup
-eks:UpdateNodegroupConfig
-eks:UpdateNodegroupVersion
-```
-
-#### EC2 Permissions
-```
-ec2:AllocateAddress
-ec2:AssociateRouteTable
-ec2:AttachInternetGateway
-ec2:AuthorizeSecurityGroupIngress
-ec2:CreateInternetGateway
-ec2:CreateNatGateway
-ec2:CreateRoute
-ec2:CreateRouteTable
-ec2:CreateSecurityGroup
-ec2:CreateSubnet
-ec2:CreateTags
-ec2:CreateVpc
-ec2:DeleteInternetGateway
-ec2:DeleteNatGateway
-ec2:DeleteRoute
-ec2:DeleteRouteTable
-ec2:DeleteSecurityGroup
-ec2:DeleteSubnet
-ec2:DeleteTags
-ec2:DeleteVpc
-ec2:DescribeAddresses
-ec2:DescribeInternetGateways
-ec2:DescribeNatGateways
-ec2:DescribeNetworkInterfaces
-ec2:DescribeRouteTables
-ec2:DescribeSecurityGroups
-ec2:DescribeSubnets
-ec2:DescribeVpcs
-ec2:DetachInternetGateway
-ec2:DisassociateRouteTable
-ec2:ModifySubnetAttribute
-ec2:ModifyVpcAttribute
-ec2:ReleaseAddress
-```
-
-#### ECR Permissions
-```
-ecr:GetAuthorizationToken
-ecr:BatchCheckLayerAvailability
-ecr:GetDownloadUrlForLayer
-ecr:BatchGetImage
-ecr:DescribeRepositories
-ecr:ListImages
-ecr:DescribeImages
-```
-
-#### IAM Permissions
-```
-iam:CreateServiceLinkedRole
-iam:GetRole
-iam:ListAttachedRolePolicies
-iam:PassRole
-```
-
-#### CloudFormation Permissions (used by eksctl)
-```
-cloudformation:CreateStack
-cloudformation:DeleteStack
-cloudformation:DescribeStacks
-cloudformation:DescribeStackEvents
-cloudformation:UpdateStack
-cloudformation:ListStacks
-```
-
-#### FSx Permissions
-```
-fsx:CreateFileSystem
-fsx:DeleteFileSystem
-fsx:DescribeFileSystems
-```
-
-You can either attach the AWS managed policies `AmazonEKSClusterPolicy`, `AmazonECR-FullAccess`, and `AmazonFSxFullAccess` to your IAM user/role, or create a custom policy with the permissions listed above.
 
 ### Installation Instructions
 
