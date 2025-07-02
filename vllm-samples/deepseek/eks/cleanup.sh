@@ -101,7 +101,7 @@ echo "Getting FSx security group ID..."
 FSX_ID=$(kubectl get pv fsx-lustre-pv -o jsonpath='{.spec.csi.volumeHandle}' 2>/dev/null | cut -d'/' -f1 || echo "")
 if [ -n "$FSX_ID" ]; then
     echo "Found FSx filesystem ID: $FSX_ID"
-    SG_ID=$(aws --profile $AWS_PROFILE fsx describe-file-systems --file-system-id $FSX_ID --query "FileSystems[0].NetworkInterfaceIds" --output text 2>/dev/null | xargs -I{} aws --profile $AWS_PROFILE ec2 describe-network-interfaces --network-interface-ids {} --query "NetworkInterfaces[0].Groups[0].GroupId" --output text 2>/dev/null || echo "")
+    SG_ID=$(aws --profile $AWS_PROFILE fsx describe-file-systems --file-system-id $FSX_ID --query "FileSystems[0].NetworkInterfaceIds[0]" --output text 2>/dev/null | xargs -I{} aws --profile $AWS_PROFILE ec2 describe-network-interfaces --network-interface-ids {} --query "NetworkInterfaces[0].Groups[0].GroupId" --output text 2>/dev/null || echo "")
     if [ -n "$SG_ID" ]; then
         echo "Found FSx security group ID: $SG_ID"
     else
@@ -111,39 +111,57 @@ else
     print_warning "Could not retrieve FSx filesystem ID."
 fi
 
+echo "Getting Node security group ID..."
+NODE_SG=$(aws --profile $AWS_PROFILE ec2 describe-security-groups --filters "Name=tag:aws:cloudformation:logical-id,Values=NodeSecurityGroup" "Name=tag:eks:cluster-name,Values=$CLUSTER_NAME" --query "SecurityGroups[0].GroupId" --output text 2>/dev/null || echo "")
+if [ -n "$NODE_SG" ]; then
+    echo "Found Node security group ID: $NODE_SG"
+else
+    print_warning "Could not retrieve Node security group ID."
+fi
+
+echo "Getting VPC ID from the EKS cluster..."
+VPC_ID=$(aws --profile $AWS_PROFILE eks describe-cluster --name $CLUSTER_NAME --query "cluster.resourcesVpcConfig.vpcId" --output text 2>/dev/null || echo "")
+if [ -n "$VPC_ID" ]; then
+    echo "Found VPC ID: $VPC_ID"
+    
+
+else
+    print_warning "Could not retrieve VPC ID from the EKS cluster."
+fi
+
 # 1. Delete Kubernetes Resources
 print_section "Deleting Kubernetes Resources"
 
 echo "Deleting vLLM ingress..."
-kubectl delete -f vllm-20250623/aws-vllm-dlc-blog-repo/vllm-deepseek-32b-lws-ingress.yaml --ignore-not-found
+kubectl delete -f vllm-deepseek-32b-lws-ingress.yaml --ignore-not-found
 print_success "Ingress deletion initiated"
 
 echo "Waiting 30 seconds for ingress controller to process deletion..."
 sleep 30
 
 echo "Deleting vLLM LeaderWorkerSet..."
-kubectl delete -f vllm-20250623/aws-vllm-dlc-blog-repo/vllm-deepseek-32b-lws.yaml --ignore-not-found
+kubectl delete -f vllm-deepseek-32b-lws.yaml --ignore-not-found
 print_success "LeaderWorkerSet deletion initiated"
 
 echo "Waiting 60 seconds for pods to terminate..."
 sleep 60
 
 echo "Deleting FSx Lustre PVC..."
-kubectl delete -f vllm-20250623/aws-vllm-dlc-blog-repo/fsx-lustre-pvc.yaml --ignore-not-found
+kubectl delete -f fsx-lustre-pvc.yaml --ignore-not-found
 print_success "PVC deletion initiated"
 
 echo "Waiting 10 seconds for PVC deletion to process..."
 sleep 10
 
 echo "Deleting FSx Lustre PV..."
-kubectl delete -f vllm-20250623/aws-vllm-dlc-blog-repo/fsx-lustre-pv.yaml --ignore-not-found
+kubectl delete -f fsx-lustre-pv.yaml --ignore-not-found
 print_success "PV deletion initiated"
 
 echo "Waiting 10 seconds for PV deletion to process..."
 sleep 10
 
 echo "Deleting storage class..."
-kubectl delete -f vllm-20250623/aws-vllm-dlc-blog-repo/fsx-storage-class.yaml --ignore-not-found
+kubectl delete -f fsx-storage-class.yaml --ignore-not-found
 print_success "Storage class deletion initiated"
 
 echo "Deleting AWS Load Balancer Controller..."
@@ -218,24 +236,22 @@ print_success "Load balancer cleanup completed"
 # 6. Delete the Node Group
 print_section "Deleting Node Group"
 
-echo "Deleting node group: $NODEGROUP_NAME"
-eksctl delete nodegroup --cluster=$CLUSTER_NAME --name=$NODEGROUP_NAME --region=$REGION --profile=$AWS_PROFILE --drain=false
-
-wait_for_deletion "eksctl get nodegroup --cluster=$CLUSTER_NAME --name=$NODEGROUP_NAME --region=$REGION --profile=$AWS_PROFILE" "Node group" 1100
-print_success "Node group deletion completed"
+# Check if node group exists before attempting to delete it
+echo "Checking if node group exists: $NODEGROUP_NAME"
+if eksctl get nodegroup --cluster=$CLUSTER_NAME --name=$NODEGROUP_NAME --region=$REGION --profile=$AWS_PROFILE &>/dev/null; then
+    echo "Node group exists. Deleting node group: $NODEGROUP_NAME"
+    eksctl delete nodegroup --cluster=$CLUSTER_NAME --name=$NODEGROUP_NAME --region=$REGION --profile=$AWS_PROFILE --drain=false
+    
+    wait_for_deletion "eksctl get nodegroup --cluster=$CLUSTER_NAME --name=$NODEGROUP_NAME --region=$REGION --profile=$AWS_PROFILE" "Node group" 1100
+    print_success "Node group deletion completed"
+else
+    print_warning "Node group $NODEGROUP_NAME not found or already deleted"
+fi
 
 # 7. Delete the Security Groups
 print_section "Deleting Security Groups"
 
-if [ -n "$ALB_SG" ]; then
-    echo "Deleting ALB security group: $ALB_SG"
-    aws --profile $AWS_PROFILE ec2 delete-security-group --group-id $ALB_SG 2>/dev/null || print_warning "Failed to delete ALB security group"
-    if [ $? -eq 0 ]; then
-        print_success "ALB security group deleted"
-    fi
-else
-    print_warning "ALB security group ID not found or already deleted"
-fi
+# Delete security groups in the recommended order: FSx SG -> Node SG -> ALB SG
 
 if [ -n "$SG_ID" ]; then
     echo "Deleting FSx security group: $SG_ID"
@@ -245,6 +261,26 @@ if [ -n "$SG_ID" ]; then
     fi
 else
     print_warning "FSx security group ID not found or already deleted"
+fi
+
+if [ -n "$NODE_SG" ]; then
+    echo "Deleting Node security group: $NODE_SG"
+    aws --profile $AWS_PROFILE ec2 delete-security-group --group-id $NODE_SG 2>/dev/null || print_warning "Failed to delete Node security group"
+    if [ $? -eq 0 ]; then
+        print_success "Node security group deleted"
+    fi
+else
+    print_warning "Node security group ID not found or already deleted"
+fi
+
+if [ -n "$ALB_SG" ]; then
+    echo "Deleting ALB security group: $ALB_SG"
+    aws --profile $AWS_PROFILE ec2 delete-security-group --group-id $ALB_SG 2>/dev/null || print_warning "Failed to delete ALB security group"
+    if [ $? -eq 0 ]; then
+        print_success "ALB security group deleted"
+    fi
+else
+    print_warning "ALB security group ID not found or already deleted"
 fi
 
 # 8. Delete the EKS Cluster
