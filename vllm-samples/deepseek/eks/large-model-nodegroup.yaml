@@ -11,7 +11,7 @@ managedNodeGroups:
     minSize: 0
     maxSize: 2
     desiredCapacity: 2
-    availabilityZones: ["us-west-2a"]  # EFA-enabled nodegroups must have only one subnet or one availability zone
+    availabilityZones: [nodegroup_az]  # EFA-enabled nodegroups must have only one subnet or one availability zone
     volumeSize: 100
     privateNetworking: true
     # Use the EKS-optimized GPU AMI

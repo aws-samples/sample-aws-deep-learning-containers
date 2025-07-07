@@ -142,10 +142,6 @@ brew install helm
      --protocol tcp --port 988-1023 \
      --source-group $SG_ID
 
-  # Skip the below SG rule
-   aws --profile vllm-profile ec2 authorize-security-group-ingress --group-id $SG_ID \
-     --protocol tcp --port 988 --cidr 0.0.0.0/0
-
    # Create the FSx Lustre filesystem
    SUBNET_ID=$(aws --profile vllm-profile eks describe-cluster --name vllm-cluster \
      --query "cluster.resourcesVpcConfig.subnetIds[0]" --output text)

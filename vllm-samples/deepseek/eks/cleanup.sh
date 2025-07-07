@@ -72,7 +72,7 @@ command_exists() {
 }
 
 # Check for required tools
-for cmd in kubectl aws eksctl helm; do
+for cmd in kubectl aws eksctl helm jq; do
     if ! command_exists $cmd; then
         print_error "Required command '$cmd' not found. Please install it and try again."
         exit 1
@@ -93,17 +93,19 @@ fi
 print_section "Retrieving security group IDs"
 echo "Getting ALB security group ID..."
 ALB_SG=$(kubectl get ingress vllm-deepseek-32b-lws-ingress -o jsonpath='{.metadata.annotations.alb\.ingress\.kubernetes\.io/security-groups}' 2>/dev/null || echo "")
-if [ -z "$ALB_SG" ]; then
-    print_warning "Could not retrieve ALB security group ID from ingress. Will try to find it later."
+if [ -n "$ALB_SG" ]; then
+    echo "Found ALB security group ID: $ALB_SG"
+else
+        print_warning "Could not retrieve ASG security group ID."    
 fi
 
 echo "Getting FSx security group ID..."
 FSX_ID=$(kubectl get pv fsx-lustre-pv -o jsonpath='{.spec.csi.volumeHandle}' 2>/dev/null | cut -d'/' -f1 || echo "")
 if [ -n "$FSX_ID" ]; then
     echo "Found FSx filesystem ID: $FSX_ID"
-    SG_ID=$(aws --profile $AWS_PROFILE fsx describe-file-systems --file-system-id $FSX_ID --query "FileSystems[0].NetworkInterfaceIds[0]" --output text 2>/dev/null | xargs -I{} aws --profile $AWS_PROFILE ec2 describe-network-interfaces --network-interface-ids {} --query "NetworkInterfaces[0].Groups[0].GroupId" --output text 2>/dev/null || echo "")
-    if [ -n "$SG_ID" ]; then
-        echo "Found FSx security group ID: $SG_ID"
+    FSX_SG_ID=$(aws --profile $AWS_PROFILE fsx describe-file-systems --file-system-id $FSX_ID --query "FileSystems[0].NetworkInterfaceIds[0]" --output text 2>/dev/null | xargs -I{} aws --profile $AWS_PROFILE ec2 describe-network-interfaces --network-interface-ids {} --query "NetworkInterfaces[0].Groups[0].GroupId" --output text 2>/dev/null || echo "")
+    if [ -n "$FSX_SG_ID" ]; then
+        echo "Found FSx security group ID: $FSX_SG_ID"
     else
         print_warning "Could not retrieve FSx security group ID."
     fi
@@ -112,11 +114,28 @@ else
 fi
 
 echo "Getting Node security group ID..."
-NODE_SG=$(aws --profile $AWS_PROFILE ec2 describe-security-groups --filters "Name=tag:aws:cloudformation:logical-id,Values=NodeSecurityGroup" "Name=tag:eks:cluster-name,Values=$CLUSTER_NAME" --query "SecurityGroups[0].GroupId" --output text 2>/dev/null || echo "")
-if [ -n "$NODE_SG" ]; then
-    echo "Found Node security group ID: $NODE_SG"
+# First get an instance ID from the node group
+NODE_INSTANCE_ID=$(aws --profile $AWS_PROFILE ec2 describe-instances \
+  --filters "Name=tag:eks:nodegroup-name,Values=$NODEGROUP_NAME" \
+  --query "Reservations[0].Instances[0].InstanceId" --output text 2>/dev/null || echo "")
+
+if [ -n "$NODE_INSTANCE_ID" ] && [ "$NODE_INSTANCE_ID" != "None" ]; then
+    # Then get all security groups from that instance
+    NODE_SGS=$(aws --profile $AWS_PROFILE ec2 describe-instances \
+      --instance-ids $NODE_INSTANCE_ID \
+      --query "Reservations[0].Instances[0].SecurityGroups[*].GroupId" --output text 2>/dev/null || echo "")
+    
+    # Get the first security group for backward compatibility
+    NODE_SG=$(echo "$NODE_SGS" | awk '{print $1}')
+    
+    if [ -n "$NODE_SG" ] && [ "$NODE_SG" != "None" ]; then
+        echo "Found Node security group ID: $NODE_SG"
+        echo "All security groups attached to the node: $NODE_SGS"
+    else
+        print_warning "Could not retrieve Node security group ID from instance."
+    fi
 else
-    print_warning "Could not retrieve Node security group ID."
+    print_warning "Could not find any instances in the nodegroup $NODEGROUP_NAME."
 fi
 
 echo "Getting VPC ID from the EKS cluster..."
@@ -233,7 +252,63 @@ done
 
 print_success "Load balancer cleanup completed"
 
-# 6. Delete the Node Group
+# 6. Find and remove security group rules that reference the ALB security group
+print_section "Finding and removing security group dependencies"
+
+if [ -n "$ALB_SG" ] && [ -n "$NODE_SGS" ]; then
+    echo "Checking for security group rules that reference the ALB security group..."
+    
+    # Loop through all node security groups
+    for sg_id in $NODE_SGS; do
+        echo "Checking security group: $sg_id"
+        
+        # Get all ingress rules that reference the ALB security group
+        RULES=$(aws --profile $AWS_PROFILE ec2 describe-security-groups --group-ids $sg_id \
+            --query "SecurityGroups[0].IpPermissions[?UserIdGroupPairs[?GroupId=='$ALB_SG']].{FromPort:FromPort,ToPort:ToPort,IpProtocol:IpProtocol}" --output json)
+        
+        if [ "$RULES" != "[]" ] && [ "$RULES" != "" ]; then
+            echo "Found rules in security group $sg_id that reference the ALB security group"
+            
+            # Extract rule details and remove each rule
+            echo "$RULES" | jq -c '.[]' | while read -r rule; do
+                FROM_PORT=$(echo "$rule" | jq -r '.FromPort')
+                TO_PORT=$(echo "$rule" | jq -r '.ToPort')
+                PROTOCOL=$(echo "$rule" | jq -r '.IpProtocol')
+                
+                # Handle special cases
+                PORT_PARAM=""
+                if [ "$PROTOCOL" = "-1" ]; then
+                    # All protocols
+                    echo "Removing rule: Protocol=All, Source=$ALB_SG"
+                elif [ "$FROM_PORT" = "null" ] || [ "$TO_PORT" = "null" ]; then
+                    # All ports
+                    echo "Removing rule: Protocol=$PROTOCOL, Ports=All, Source=$ALB_SG"
+                else
+                    echo "Removing rule: Protocol=$PROTOCOL, Ports=$FROM_PORT-$TO_PORT, Source=$ALB_SG"
+                    PORT_PARAM="--port $FROM_PORT-$TO_PORT"
+                fi
+                
+                aws --profile $AWS_PROFILE ec2 revoke-security-group-ingress \
+                    --group-id $sg_id \
+                    --protocol $PROTOCOL \
+                    $PORT_PARAM \
+                    --source-group $ALB_SG
+                
+                if [ $? -eq 0 ]; then
+                    print_success "Successfully removed security group rule"
+                else
+                    print_warning "Failed to remove security group rule"
+                fi
+            done
+        else
+            echo "No rules found in security group $sg_id that reference the ALB security group"
+        fi
+    done
+else
+    print_warning "Missing ALB security group ID or Node security group IDs, skipping dependency check"
+fi
+
+# 7. Delete the Node Group
 print_section "Deleting Node Group"
 
 # Check if node group exists before attempting to delete it
@@ -248,42 +323,46 @@ else
     print_warning "Node group $NODEGROUP_NAME not found or already deleted"
 fi
 
-# 7. Delete the Security Groups
+# 8. Delete the Security Groups
 print_section "Deleting Security Groups"
 
 # Delete security groups in the recommended order: FSx SG -> Node SG -> ALB SG
 
-if [ -n "$SG_ID" ]; then
-    echo "Deleting FSx security group: $SG_ID"
-    aws --profile $AWS_PROFILE ec2 delete-security-group --group-id $SG_ID 2>/dev/null || print_warning "Failed to delete FSx security group"
-    if [ $? -eq 0 ]; then
+if [ -n "$FSX_SG_ID" ]; then
+    echo "Deleting FSx security group: $FSX_SG_ID"
+    if aws --profile $AWS_PROFILE ec2 delete-security-group --group-id $FSX_SG_ID; then
         print_success "FSx security group deleted"
+    else
+        print_warning "Failed to delete FSx security group. Error: $(aws --profile $AWS_PROFILE ec2 delete-security-group --group-id $FSX_SG_ID 2>&1)"
     fi
 else
     print_warning "FSx security group ID not found or already deleted"
 fi
 
-if [ -n "$NODE_SG" ]; then
-    echo "Deleting Node security group: $NODE_SG"
-    aws --profile $AWS_PROFILE ec2 delete-security-group --group-id $NODE_SG 2>/dev/null || print_warning "Failed to delete Node security group"
-    if [ $? -eq 0 ]; then
-        print_success "Node security group deleted"
-    fi
-else
-    print_warning "Node security group ID not found or already deleted"
-fi
+# Skip deleting Node security group as it's managed by CloudFormation and will be deleted with the cluster
+# if [ -n "$NODE_SG" ]; then
+#     echo "Deleting Node security group: $NODE_SG"
+#     if aws --profile $AWS_PROFILE ec2 delete-security-group --group-id $NODE_SG; then
+#         print_success "Node security group deleted"
+#     else
+#         print_warning "Failed to delete Node security group. Error: $(aws --profile $AWS_PROFILE ec2 delete-security-group --group-id $NODE_SG 2>&1)"
+#     fi
+# else
+#     print_warning "Node security group ID not found or already deleted"
+# fi
 
 if [ -n "$ALB_SG" ]; then
     echo "Deleting ALB security group: $ALB_SG"
-    aws --profile $AWS_PROFILE ec2 delete-security-group --group-id $ALB_SG 2>/dev/null || print_warning "Failed to delete ALB security group"
-    if [ $? -eq 0 ]; then
+    if aws --profile $AWS_PROFILE ec2 delete-security-group --group-id $ALB_SG; then
         print_success "ALB security group deleted"
+    else
+        print_warning "Failed to delete ALB security group. Error: $(aws --profile $AWS_PROFILE ec2 delete-security-group --group-id $ALB_SG 2>&1)"
     fi
 else
     print_warning "ALB security group ID not found or already deleted"
 fi
 
-# 8. Delete the EKS Cluster
+# 9. Delete the EKS Cluster
 print_section "Deleting EKS Cluster"
 
 echo "Deleting EKS cluster: $CLUSTER_NAME"
@@ -292,7 +371,7 @@ eksctl delete cluster --name=$CLUSTER_NAME --region=$REGION --profile=$AWS_PROFI
 wait_for_deletion "aws --profile $AWS_PROFILE eks describe-cluster --name $CLUSTER_NAME" "EKS cluster" 1100
 print_success "EKS cluster deletion completed"
 
-# 9. Final Verification
+# 10. Final Verification
 print_section "Final Verification"
 
 echo "Checking for any remaining CloudFormation stacks..."
