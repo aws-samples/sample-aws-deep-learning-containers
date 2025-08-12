@@ -91,117 +91,216 @@ brew install helm
 
 ## Files
 
+- `cleanup.sh`: Script for cleaning up all resources created by this deployment
 - `eks-cluster.yaml`: EKS cluster configuration
+- `fsx-inspect-pod.yaml`: Pod definition for inspecting FSx Lustre filesystem
+- `fsx-lustre-pv.yaml`: Persistent Volume for FSx Lustre
+- `fsx-lustre-pvc.yaml`: Persistent Volume Claim for FSx Lustre
+- `fsx-storage-class.yaml`: Storage class for FSx Lustre
+- `iam-policy.json`: IAM policy document for the AWS Load Balancer Controller
 - `large-model-nodegroup.yaml`: Nodegroup configuration for p4d.24xlarge instances with EFA support
 - `vllm-deepseek-32b-lws.yaml`: LeaderWorkerSet configuration for the vLLM server with deepseek model
 - `vllm-deepseek-32b-lws-ingress.yaml`: Kubernetes ingress for the vLLM server with ALB
-- `fsx-storage-class.yaml`: Storage class for FSx Lustre
-- `fsx-lustre-pv.yaml`: Persistent Volume for FSx Lustre
-- `fsx-lustre-pvc.yaml`: Persistent Volume Claim for FSx Lustre
 
 ## Setup
 
-1. Before starting, you need to update the following files with your specific environment details:
+This section provides step-by-step instructions to deploy the vLLM Deepseek model on Amazon EKS with GPU support, EFA, and FSx Lustre integration. Follow these steps in order to set up your environment.
 
-   a. Update the region in eks-cluster.yaml:
-   ```bash
-   # Update the region to match your AWS profile's region
-   sed -i "s|region: us-east-1|region: us-west-2|g" eks-cluster.yaml
-   ```
+### Create an EKS cluster
 
-2. Create the EKS cluster and nodegroup with EFA support:
-   ```
-   eksctl create cluster -f eks-cluster.yaml --profile vllm-profile
-   eksctl create nodegroup -f large-model-nodegroup.yaml --profile vllm-profile
-   ```
-   **Timeline:** This will take approximately 15-20 minutes to complete for the cluster creation, and an additional 10-15 minutes for the nodegroup with p4d.24xlarge instances. The process involves creating a CloudFormation stack for the EKS control plane and node groups, setting up networking components, configuring the necessary IAM roles and policies, and installing EFA drivers on the nodes.
+First, we create an EKS cluster in the us-west-2 Region using the provided configuration file:
 
-   **Note:** The nodegroup uses an EKS-optimized AMI with GPU support (ami-0ad09867389dc17a1) which already includes the NVIDIA device plugin, so there's no need to install it separately.
+```bash
+# Update the region in eks-cluster.yaml if needed
+sed -i "s|region: us-east-1|region: us-west-2|g" eks-cluster.yaml
 
-3. Configure kubectl to connect to the new cluster:
-   ```
-   aws eks update-kubeconfig --name vllm-cluster --region us-west-2 --profile vllm-profile
-   ```
+# Create the EKS cluster
+eksctl create cluster -f eks-cluster.yaml --profile vllm-profile
+```
 
-4. Create an FSx Lustre filesystem:
-   ```bash
-   # Create a security group for FSx Lustre (takes a few seconds)
-   SG_ID=$(aws --profile vllm-profile ec2 create-security-group --group-name fsx-lustre-sg \
-     --description "Security group for FSx Lustre" \
-     --vpc-id $(aws --profile vllm-profile eks describe-cluster --name vllm-cluster \
-     --query "cluster.resourcesVpcConfig.vpcId" --output text) \
-     --query "GroupId" --output text)
+**Timeline:** This will take approximately 15-20 minutes to complete. During this time, eksctl creates a CloudFormation stack that provisions the necessary resources for your EKS cluster.
 
-   # Add inbound rule for FSx Lustre
-   aws --profile vllm-profile ec2 authorize-security-group-ingress --group-id $SG_ID \
+You can validate the cluster creation with:
+
+```bash
+# Verify cluster creation
+eksctl get cluster --profile vllm-profile
+```
+
+### Create a node group with EFA support
+
+Next, we create a managed node group with P4d.24xlarge instances that have EFA enabled:
+
+```bash
+# Get the VPC ID from the EKS cluster
+VPC_ID=$(aws --profile vllm-profile eks describe-cluster --name vllm-cluster \
+  --query "cluster.resourcesVpcConfig.vpcId" --output text)
+
+# Find the one of private subnet's availability zone
+PRIVATE_AZ=$(aws --profile vllm-profile ec2 describe-subnets \
+  --filters "Name=vpc-id,Values=$VPC_ID" "Name=map-public-ip-on-launch,Values=false" \
+  --query "Subnets[0].AvailabilityZone" --output text)
+echo "Selected private subnet AZ: $PRIVATE_AZ"
+
+# update the nodegroup_az section with the private AZ value
+sed -i "s|availabilityZones: \[nodegroup_az\]|availabilityZones: \[\"$PRIVATE_AZ\"\]|g" large-model-nodegroup.yaml
+
+# Verify the change
+grep "availabilityZones" large-model-nodegroup.yaml
+
+# Create the node group with EFA support
+eksctl create nodegroup -f large-model-nodegroup.yaml --profile vllm-profile
+```
+
+**Timeline:** This will take approximately 10-15 minutes to complete. The EFA configuration is particularly important for multi-node deployments.
+
+After the node group is created, configure kubectl to connect to the cluster:
+
+```bash
+# Configure kubectl to connect to the cluster
+aws eks update-kubeconfig --name vllm-cluster --region us-west-2 --profile vllm-profile
+```
+
+Verify that the nodes are ready:
+
+```bash
+# Check node status
+kubectl get nodes
+```
+
+### Check NVIDIA device pods
+
+Verify that the NVIDIA device plugin is running:
+
+```bash
+# Check NVIDIA device plugin pods
+kubectl get pods -n kube-system | grep nvidia
+```
+
+Verify that GPUs are available in the cluster:
+
+```bash
+# Check available GPUs
+kubectl get nodes -o json | jq '.items[].status.capacity."nvidia.com/gpu"'
+```
+
+### Create an FSx for Lustre file system
+
+For optimal performance, we create an FSx for Lustre file system to store our model weights:
+
+```bash
+# Create a security group for FSx Lustre
+FSX_SG_ID=$(aws --profile vllm-profile ec2 create-security-group --group-name fsx-lustre-sg \
+  --description "Security group for FSx Lustre" \
+  --vpc-id $(aws --profile vllm-profile eks describe-cluster --name vllm-cluster \
+  --query "cluster.resourcesVpcConfig.vpcId" --output text) \
+  --query "GroupId" --output text)
+
+echo "Created security group: $FSX_SG_ID"
+
+# Add inbound rules for FSx Lustre
+aws --profile vllm-profile ec2 authorize-security-group-ingress --group-id $FSX_SG_ID \
+  --protocol tcp --port 988-1023 \
+  --source-group $(aws --profile vllm-profile eks describe-cluster --name vllm-cluster \
+  --query "cluster.resourcesVpcConfig.clusterSecurityGroupId" --output text)
+
+aws --profile vllm-profile ec2 authorize-security-group-ingress --group-id $FSX_SG_ID \
      --protocol tcp --port 988-1023 \
-     --source-group $(aws --profile vllm-profile eks describe-cluster --name vllm-cluster \
-     --query "cluster.resourcesVpcConfig.clusterSecurityGroupId" --output text)
+     --source-group $FSX_SG_ID
 
-   aws --profile vllm-profile ec2 authorize-security-group-ingress --group-id $SG_ID \
-     --protocol tcp --port 988-1023 \
-     --source-group $SG_ID
+# Create the FSx Lustre filesystem
+SUBNET_ID=$(aws --profile vllm-profile eks describe-cluster --name vllm-cluster \
+  --query "cluster.resourcesVpcConfig.subnetIds[0]" --output text)
 
-   # Create the FSx Lustre filesystem
-   SUBNET_ID=$(aws --profile vllm-profile eks describe-cluster --name vllm-cluster \
-     --query "cluster.resourcesVpcConfig.subnetIds[0]" --output text)
+echo "Using subnet: $SUBNET_ID"
 
-   FSX_ID=$(aws --profile vllm-profile fsx create-file-system --file-system-type LUSTRE \
-     --storage-capacity 1200 --subnet-ids $SUBNET_ID \
-     --security-group-ids $SG_ID --lustre-configuration DeploymentType=SCRATCH_2 \
-     --tags Key=Name,Value=vllm-model-storage \
-     --query "FileSystem.FileSystemId" --output text)
+FSX_ID=$(aws --profile vllm-profile fsx create-file-system --file-system-type LUSTRE \
+  --storage-capacity 1200 --subnet-ids $SUBNET_ID \
+  --security-group-ids $FSX_SG_ID --lustre-configuration DeploymentType=SCRATCH_2 \
+  --tags Key=Name,Value=vllm-model-storage \
+  --query "FileSystem.FileSystemId" --output text)
 
-   # Wait for the filesystem to be available
-   # **Timeline:** FSx Lustre filesystem creation typically takes 5-10 minutes
-   aws --profile vllm-profile fsx describe-file-systems --file-system-id $FSX_ID \
-     --query "FileSystems[0].Lifecycle" --output text
-   
-   # You can run the above command periodically until it returns "AVAILABLE"
-   # Example: watch -n 30 "aws --profile vllm-profile fsx describe-file-systems --file-system-id $FSX_ID --query FileSystems[0].Lifecycle --output text"
+echo "Created FSx filesystem: $FSX_ID"
 
-   # Get the DNS name and mount name
-   FSX_DNS=$(aws --profile vllm-profile fsx describe-file-systems --file-system-id $FSX_ID \
-     --query "FileSystems[0].DNSName" --output text)
-   
-   FSX_MOUNT=$(aws --profile vllm-profile fsx describe-file-systems --file-system-id $FSX_ID \
-     --query "FileSystems[0].LustreConfiguration.MountName" --output text)
-   ```
+# Wait for the filesystem to be available (typically takes 5-10 minutes)
+echo "Waiting for filesystem to become available..."
+aws --profile vllm-profile fsx describe-file-systems --file-system-id $FSX_ID \
+  --query "FileSystems[0].Lifecycle" --output text
 
-5. Install the AWS FSx CSI driver:
-   ```bash
-   helm repo add aws-fsx-csi-driver https://kubernetes-sigs.github.io/aws-fsx-csi-driver/
-   helm repo update
-   helm install aws-fsx-csi-driver aws-fsx-csi-driver/aws-fsx-csi-driver --namespace kube-system
-   ```
+# You can run the above command periodically until it returns "AVAILABLE"
+# Example: watch -n 30 "aws --profile vllm-profile fsx describe-file-systems --file-system-id $FSX_ID --query FileSystems[0].Lifecycle --output text"
 
-6. Create the Kubernetes resources for FSx Lustre:
-   ```bash
-   # Update the storage class with your subnet and security group IDs
-   sed -i "s|<subnet-id>|$SUBNET_ID|g" fsx-storage-class.yaml
-   sed -i "s|<sg-id>|$SG_ID|g" fsx-storage-class.yaml
+# Get the DNS name and mount name
+FSX_DNS=$(aws --profile vllm-profile fsx describe-file-systems --file-system-id $FSX_ID \
+  --query "FileSystems[0].DNSName" --output text)
 
-   # Update the PV with your FSx Lustre details
-   sed -i "s|<fs-id>|$FSX_ID|g" fsx-lustre-pv.yaml
-   sed -i "s|<fs-id>.fsx.us-west-2.amazonaws.com|$FSX_DNS|g" fsx-lustre-pv.yaml
-   sed -i "s|<mount-name>|$FSX_MOUNT|g" fsx-lustre-pv.yaml
+FSX_MOUNT=$(aws --profile vllm-profile fsx describe-file-systems --file-system-id $FSX_ID \
+  --query "FileSystems[0].LustreConfiguration.MountName" --output text)
 
-   # Apply the Kubernetes resources
-   kubectl apply -f fsx-storage-class.yaml
-   kubectl apply -f fsx-lustre-pv.yaml
-   kubectl apply -f fsx-lustre-pvc.yaml
-   ```
+echo "FSx DNS: $FSX_DNS"
+echo "FSx Mount Name: $FSX_MOUNT"
+```
 
-7. Create a secret for Hugging Face token (if needed):
-   ```
-   kubectl create secret generic huggingface-token --from-literal=token=YOUR_HF_TOKEN
-   ```
-   The Hugging Face token is optional but may be required if the model is not publicly available.
+### Install the AWS FSx CSI Driver
 
-8. Install the AWS Load Balancer Controller:
-   ```bash
-   # Download the IAM policy document
-   curl -o iam-policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/main/docs/install/iam_policy.json
+To mount the FSx for Lustre file system in our Kubernetes pods:
+
+```bash
+# Add the AWS FSx CSI Driver Helm repository
+helm repo add aws-fsx-csi-driver https://kubernetes-sigs.github.io/aws-fsx-csi-driver/
+helm repo update
+
+# Install the AWS FSx CSI Driver
+helm install aws-fsx-csi-driver aws-fsx-csi-driver/aws-fsx-csi-driver --namespace kube-system
+```
+
+Verify that the AWS FSx CSI Driver is running:
+
+```bash
+# Check AWS FSx CSI Driver pods
+kubectl get pods -n kube-system | grep fsx
+```
+
+### Create Kubernetes resources for FSx for Lustre
+
+We create the necessary Kubernetes resources to use our FSx for Lustre file system:
+
+```bash
+# Update the storage class with your subnet and security group IDs
+sed -i "s|<subnet-id>|$SUBNET_ID|g" fsx-storage-class.yaml
+sed -i "s|<sg-id>|$FSX_SG_ID|g" fsx-storage-class.yaml
+
+# Update the PV with your FSx Lustre details
+sed -i "s|<fs-id>|$FSX_ID|g" fsx-lustre-pv.yaml
+sed -i "s|<fs-id>.fsx.us-west-2.amazonaws.com|$FSX_DNS|g" fsx-lustre-pv.yaml
+sed -i "s|<mount-name>|$FSX_MOUNT|g" fsx-lustre-pv.yaml
+
+# Apply the Kubernetes resources
+kubectl apply -f fsx-storage-class.yaml
+kubectl apply -f fsx-lustre-pv.yaml
+kubectl apply -f fsx-lustre-pvc.yaml
+```
+
+Verify that the resources were created successfully:
+
+```bash
+# Check storage class
+kubectl get sc fsx-sc
+
+# Check persistent volume
+kubectl get pv fsx-lustre-pv
+
+# Check persistent volume claim
+kubectl get pvc fsx-lustre-pvc
+```
+
+### Install the AWS Load Balancer Controller
+
+To expose our vLLM service to the outside world:
+
+```bash
+# Download the IAM policy document
+curl -o iam-policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/main/docs/install/iam_policy.json
 
 # Create the IAM policy
 aws --profile vllm-profile iam create-policy --policy-name AWSLoadBalancerControllerIAMPolicy --policy-document file://iam-policy.json
@@ -213,108 +312,142 @@ eksctl utils associate-iam-oidc-provider --profile vllm-profile --region=us-west
 ACCOUNT_ID=$(aws --profile vllm-profile sts get-caller-identity --query "Account" --output text)
 eksctl create iamserviceaccount \
   --profile vllm-profile \
-     --cluster=vllm-cluster \
-     --namespace=kube-system \
-     --name=aws-load-balancer-controller \
-     --attach-policy-arn=arn:aws:iam::$ACCOUNT_ID:policy/AWSLoadBalancerControllerIAMPolicy \
-     --override-existing-serviceaccounts \
-     --approve
+  --cluster=vllm-cluster \
+  --namespace=kube-system \
+  --name=aws-load-balancer-controller \
+  --attach-policy-arn=arn:aws:iam::$ACCOUNT_ID:policy/AWSLoadBalancerControllerIAMPolicy \
+  --override-existing-serviceaccounts \
+  --approve
 
-   # Install the AWS Load Balancer Controller using Helm
-   helm repo add eks https://aws.github.io/eks-charts
-   helm repo update
-   
-   # Install the CRDs
-   kubectl apply -f https://raw.githubusercontent.com/aws/eks-charts/master/stable/aws-load-balancer-controller/crds/crds.yaml
-   
-   # Install the controller
-   helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
-     -n kube-system \
-     --set clusterName=vllm-cluster \
-     --set serviceAccount.create=false \
-     --set serviceAccount.name=aws-load-balancer-controller
-   
-   # Install the LeaderWorkerSet controller
-   helm install lws oci://registry.k8s.io/lws/charts/lws \
-     --version=0.6.1 \
-     --namespace lws-system \
-     --create-namespace \
-     --wait --timeout 300s
-   ```
+# Install the AWS Load Balancer Controller using Helm
+helm repo add eks https://aws.github.io/eks-charts
+helm repo update
 
-9. Create a security group for the ALB and update the service and ingress files:
-   ```bash
-   # Get your public IP address
-   MY_IP=$(curl -s https://checkip.amazonaws.com)
-   
-   # Get the VPC ID from the EKS cluster
-   VPC_ID=$(aws --profile vllm-profile eks describe-cluster --name vllm-cluster \
-     --query "cluster.resourcesVpcConfig.vpcId" --output text)
-   
-   # Create a security group for the ALB
-   ALB_SG=$(aws --profile vllm-profile ec2 create-security-group \
-     --group-name vllm-alb-sg \
-     --description "Security group for vLLM ALB" \
-     --vpc-id $VPC_ID \
-     --query "GroupId" --output text)
-   
-   echo "ALB security group: $ALB_SG"
-   
-   # Allow inbound traffic on port 80 from your IP
-   aws --profile vllm-profile ec2 authorize-security-group-ingress \
-     --group-id $ALB_SG \
-     --protocol tcp \
-     --port 80 \
-     --cidr ${MY_IP}/32
-   
-   # Get the node group security group ID
-   NODE_INSTANCE_ID=$(aws --profile vllm-profile ec2 describe-instances \
-     --filters "Name=tag:eks:nodegroup-name,Values=vllm-p4d-nodes-efa" \
-     --query "Reservations[0].Instances[0].InstanceId" --output text)
-   
-   NODE_SG=$(aws --profile vllm-profile ec2 describe-instances \
-     --instance-ids $NODE_INSTANCE_ID \
-     --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" --output text)
-   
-   echo "Node security group: $NODE_SG"
-   
-   # Allow traffic from ALB security group to node security group on port 8000 (vLLM service port)
-   aws --profile vllm-profile ec2 authorize-security-group-ingress \
-     --group-id $NODE_SG \
-     --protocol tcp \
-     --port 8000 \
-     --source-group $ALB_SG
-   
-   # Update the security group in the ingress file
-   sed -i "s|<sg-id>|$ALB_SG|g" vllm-deepseek-32b-lws-ingress
-   
-   # First, verify that the AWS Load Balancer Controller is running
-   kubectl get pods -n kube-system | grep aws-load-balancer-controller
-   
-   # Wait until the controller is in Running state
-   # If it's not running, check the logs:
-   # kubectl logs -n kube-system deployment/aws-load-balancer-controller
-   
-   # Apply the LeaderWorkerSet
-   kubectl apply -f vllm-deepseek-32b-lws.yaml
-   
-   # Apply the ingress (only after the controller is running)
-   kubectl apply -f vllm-deepseek-32b-lws-ingress.yaml
-   ```
-   **Timeline:** 
-   - The deployment will start immediately, but the pod may remain in "ContainerCreating" state for several minutes (5-15 minutes) while it pulls the large GPU-enabled container image.
-   - After the container starts, it will take additional time (10-15 minutes) to download and load the DeepSeek model.
-   - You can monitor the progress with: `kubectl get pods` and `kubectl logs -f daemonset/vllm-deepseek-32b`
+# Install the CRDs
+kubectl apply -f https://raw.githubusercontent.com/aws/eks-charts/master/stable/aws-load-balancer-controller/crds/crds.yaml
 
-## Usage
+# Install the controller
+helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+  -n kube-system \
+  --set clusterName=vllm-cluster \
+  --set serviceAccount.create=false \
+  --set serviceAccount.name=aws-load-balancer-controller
 
-Once the deployment is complete, you can access the vLLM server at the provided ALB URL:
+# Install the LeaderWorkerSet controller
+helm install lws oci://registry.k8s.io/lws/charts/lws \
+  --version=0.6.1 \
+  --namespace lws-system \
+  --create-namespace \
+  --wait --timeout 300s
+```
 
-**Timeline:** The ALB creation typically takes 2-5 minutes to provision and become available with a DNS name.
+Verify that the AWS Load Balancer Controller is running:
 
 ```bash
+# Check AWS Load Balancer Controller pods
+kubectl get pods -n kube-system | grep aws-load-balancer-controller
+```
+
+### Configure security groups for the ALB
+
+We create a dedicated security group for the ALB:
+
+```bash
+# Create security group for the ALB
+USER_IP=$(curl -s https://checkip.amazonaws.com)
+
+VPC_ID=$(aws --profile vllm-profile eks describe-cluster --name vllm-cluster \
+  --query "cluster.resourcesVpcConfig.vpcId" --output text)
+
+ALB_SG=$(aws --profile vllm-profile ec2 create-security-group \
+  --group-name vllm-alb-sg \
+  --description "Security group for vLLM ALB" \
+  --vpc-id $VPC_ID \
+  --query "GroupId" --output text)
+
+echo "ALB security group: $ALB_SG"
+
+# Allow inbound traffic on port 80 from your IP
+aws --profile vllm-profile ec2 authorize-security-group-ingress \
+  --group-id $ALB_SG \
+  --protocol tcp \
+  --port 80 \
+  --cidr ${USER_IP}/32
+
+# Get the node group security group ID
+NODE_INSTANCE_ID=$(aws --profile vllm-profile ec2 describe-instances \
+  --filters "Name=tag:eks:nodegroup-name,Values=vllm-p4d-nodes-efa" \
+  --query "Reservations[0].Instances[0].InstanceId" --output text)
+
+NODE_SG=$(aws --profile vllm-profile ec2 describe-instances \
+  --instance-ids $NODE_INSTANCE_ID \
+  --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" --output text)
+
+echo "Node security group: $NODE_SG"
+
+# Allow traffic from ALB security group to node security group on port 8000 (vLLM service port)
+aws --profile vllm-profile ec2 authorize-security-group-ingress \
+  --group-id $NODE_SG \
+  --protocol tcp \
+  --port 8000 \
+  --source-group $ALB_SG
+
+# Update the security group in the ingress file
+sed -i "s|<sg-id>|$ALB_SG|g" vllm-deepseek-32b-lws-ingress.yaml
+```
+
+### Deploy the vLLM server
+
+Finally, we deploy the vLLM server using the LeaderWorkerSet pattern:
+
+```bash
+# Deploy the vLLM server
+# First, verify that the AWS Load Balancer Controller is running
+kubectl get pods -n kube-system | grep aws-load-balancer-controller
+
+# Wait until the controller is in Running state
+# If it's not running, check the logs:
+# kubectl logs -n kube-system deployment/aws-load-balancer-controller
+
+# Apply the LeaderWorkerSet
+kubectl apply -f vllm-deepseek-32b-lws.yaml
+```
+
+**Timeline:** The deployment will start immediately, but the pod might remain in ContainerCreating state for several minutes (5-15 minutes) while it pulls the large GPU-enabled container image. After the container starts, it will take additional time (10-15 minutes) to download and load the DeepSeek model.
+
+You can monitor the progress with:
+
+```bash
+# Monitor pod status
+kubectl get pods
+
+# Check pod logs
+kubectl logs -f <pod-name>
+```
+
+We also deploy an ingress resource that configures the ALB to route traffic to our vLLM service:
+
+```bash
+# Apply the ingress (only after the controller is running)
+kubectl apply -f vllm-deepseek-32b-lws-ingress.yaml
+```
+
+You can check the status of the ingress with:
+
+```bash
+# Check ingress status
+kubectl get ingress
+```
+
+### Test the deployment
+
+When the deployment is complete, we can test our vLLM server:
+
+```bash
+# Test the vLLM server
 # Get the ALB endpoint
-export VLLM_ENDPOINT=$(kubectl get ingress vllm-deepseek-32b-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+export VLLM_ENDPOINT=$(kubectl get ingress vllm-deepseek-32b-lws-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+echo "vLLM endpoint: $VLLM_ENDPOINT"
 
 # Test the completions API
 curl -X POST http://$VLLM_ENDPOINT/v1/completions \
@@ -325,7 +458,11 @@ curl -X POST http://$VLLM_ENDPOINT/v1/completions \
       "max_tokens": 100,
       "temperature": 0.7
   }'
+```
 
+You can also test the chat completions API:
+
+```bash
 # Test the chat completions API
 curl -X POST http://$VLLM_ENDPOINT/v1/chat/completions \
   -H "Content-Type: application/json" \
@@ -337,6 +474,8 @@ curl -X POST http://$VLLM_ENDPOINT/v1/chat/completions \
   }'
 ```
 
+**Note:** The ALB creation typically takes 2-5 minutes to provision and become available with a DNS name.
+
 The vLLM server provides several API endpoints compatible with the OpenAI API:
 - `/v1/completions` - For text completions
 - `/v1/chat/completions` - For chat completions
@@ -345,7 +484,31 @@ The vLLM server provides several API endpoints compatible with the OpenAI API:
 
 ## Cleanup
 
-To delete the EKS cluster and all resources, follow these steps in order:
+You can clean up all resources created in this deployment using either the provided cleanup script or by following the detailed manual steps below.
+
+### Using the Cleanup Script
+
+For a simplified cleanup process, you can use the provided cleanup.sh script:
+
+```bash
+# Make the script executable
+chmod +x cleanup.sh
+
+# Run the cleanup script
+./cleanup.sh
+```
+
+This script will automatically delete all resources in the correct order, with appropriate wait times between steps to ensure proper deletion. The script handles:
+- Kubernetes resources (ingress, LeaderWorkerSet, PVC, PV, AWS Load Balancer Controller)
+- IAM resources (service accounts and policies)
+- FSx for Lustre file system
+- Security groups
+- EKS node group
+- EKS cluster
+
+### Manual Cleanup Steps
+
+If you prefer to clean up resources manually or need more control over the process, follow these steps in order:
 
 ### 1. Delete Kubernetes Resources
 
