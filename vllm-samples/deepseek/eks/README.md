@@ -7,19 +7,20 @@ This repository contains scripts and configuration files to deploy a deepseek mo
 ## Prerequisites
 
 Before getting started, ensure you have:
-•	An AWS account with access to amazon EC2 P4 instances (you may need to request a quota increase)
-•	Access to a terminal which has the below tools installed.
-o	AWS CLI version 2.11.0 or later
-o	eksctl version 0.150.0 or later
-o	kubectl version 1.27 or later
-o	Helm version 3.12.0 or later
-•	Configure a new aws cli profile (vllm-profile) with an IAM role/user that has the following permissions
-o	Create, manage, and delete EKS clusters and node groups
-o	Create, manage, and delete EC2 resources including VPCs, subnets, security groups, and internet gateways
-o	Create and manage IAM roles
-o	Create, update, and delete CloudFormation stacks
-o	Create, delete, and describe FSx file systems
-o	Create and manage Elastic Load Balancers
+
+- An AWS account with access to amazon EC2 P4 instances (you may need to request a quota increase)
+- Access to a terminal which has the below tools installed:
+  - AWS CLI version 2.11.0 or later
+  - eksctl version 0.150.0 or later
+  - kubectl version 1.27 or later
+  - Helm version 3.12.0 or later
+- Configure a new aws cli profile (vllm-profile) with an IAM role/user that has the following permissions:
+  - Create, manage, and delete EKS clusters and node groups
+  - Create, manage, and delete EC2 resources including VPCs, subnets, security groups, and internet gateways
+  - Create and manage IAM roles
+  - Create, update, and delete CloudFormation stacks
+  - Create, delete, and describe FSx file systems
+  - Create and manage Elastic Load Balancers
 
 ### Regional Availability
 This solution can be deployed in any region where Amazon EKS, P4d instances, and Amazon FSx for Lustre are available. This guide uses the us-west-2 (Oregon) region.
