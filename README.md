@@ -8,32 +8,8 @@ This repository contains sample code and configurations for using AWS Deep Learn
   - **deepseek/**: Samples for deploying DeepSeek models
     - **eks/**: Configuration files and instructions for deploying DeepSeek models on Amazon EKS with GPU support, EFA, and FSx Lustre integration
 
-## Featured Samples
-
-### vLLM DeepSeek Model on EKS
-
-Deploy a DeepSeek model using the AWS public vLLM deep learning container ECR image on an Amazon EKS cluster with:
-- GPU support (p4d.24xlarge instances with NVIDIA A100 GPUs)
-- Elastic Fabric Adapter (EFA) for high-performance networking
-- FSx Lustre for persistent model storage
-- LeaderWorkerSet pattern for improved node parallelism
-
-See the [vLLM DeepSeek EKS README](vllm-samples/deepseek/eks/README.md) for detailed instructions.
-
-## Getting Started
-
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/aws-samples/sample-aws-deep-learning-containers.git
-   cd sample-aws-deep-learning-containers
-   ```
-
-2. Navigate to the sample you want to use:
-   ```bash
-   cd vllm-samples/deepseek/eks/
-   ```
-
-3. Follow the instructions in the sample's README file.
+- **mlflow/**: Samples for using SageMaker managed MLflow with Deep Learning Containers and Deep Learning AMIs
+  - **dlc-with-mlflow/**: Sample for integrating AWS DLCs with SageMaker managed MLflow for training. See [README](mlflow/dlc-with-mlflow/README.md) for detailed instructions.
 
 ## AWS Deep Learning Containers
 
