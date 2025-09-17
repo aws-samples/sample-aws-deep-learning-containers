@@ -15,21 +15,21 @@ echo "kubectl version: $(kubectl version --client)"
 
 
 # install eksctl: you need aws credential
-#if [ ! -f "$HOME/bin/eksctl" ]; then
+if [ ! -f "$HOME/bin/eksctl" ]; then
     ARCH=amd64
     PLATFORM=$(uname -s)_$ARCH
     curl -sLO "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$PLATFORM.tar.gz"
     tar -xzf eksctl_$PLATFORM.tar.gz -C /tmp && rm eksctl_$PLATFORM.tar.gz
     sudo mv /tmp/eksctl $HOME/bin
-#fi
+fi
 echo "eksctl version: $(eksctl version)"
 
 
 # install aws-iam-authenticator
-#if [ ! -f "/usr/local/bin/aws-iam-authenticator" ]; then
+if [ ! -f "/usr/local/bin/aws-iam-authenticator" ]; then
     sudo curl --location https://github.com/kubernetes-sigs/aws-iam-authenticator/releases/download/v0.6.29/aws-iam-authenticator_0.6.29_linux_amd64 -o /usr/local/bin/aws-iam-authenticator
     sudo chmod +x /usr/local/bin/aws-iam-authenticator
-#fi
+fi
 aws-iam-authenticator version
 
 
