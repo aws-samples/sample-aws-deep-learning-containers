@@ -28,8 +28,7 @@ vllm serve deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
   --port 8100 \
   --max-model-len 6000 \
   --enforce-eager \        
-  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both"}' \
-  > vllm_gpu0.log 2>&1 &
+  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both"}'
 
 # Start second GPU (decoder)
 echo "Starting decoder on GPU 1..."
@@ -40,8 +39,7 @@ vllm serve deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
   --port 8200 \
   --max-model-len 6000 \
   --enforce-eager \
-  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both"}' \
-  > vllm_gpu1.log 2>&1 &
+  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both"}'
 
 
 # Wait for GPU servers
@@ -56,8 +54,7 @@ python3 proxy.py \
   --prefiller-hosts localhost \
   --prefiller-ports 8100 \
   --decoder-hosts localhost \
-  --decoder-ports 8200 \
-  > proxy_server.log 2>&1 &
+  --decoder-ports 8200
 
 # Wait for proxy server
 wait_for_server localhost 8192

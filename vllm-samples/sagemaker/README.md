@@ -4,8 +4,8 @@ Deploy and run inference on vLLM models using AWS SageMaker and vLLM DLC.
 
 ## Files
 
-- `endpoint.py` - Deploy vLLM model to SageMaker endpoint
-- `inference.py` - Run inference against deployed endpoint
+- `deploy_and_test_sm_endpoint.py` - Complete workflow: deploy, inference, and cleanup
+- `testNixlConnector.sh` - Multi-GPU NixlConnector test script
 
 ## Prerequisites
 
@@ -17,24 +17,8 @@ Deploy and run inference on vLLM models using AWS SageMaker and vLLM DLC.
 ### Create IAM Role
 
 ```bash
-# Create trust policy
-cat > trust-policy.json << EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Service": "sagemaker.amazonaws.com"
-      },
-      "Action": "sts:AssumeRole"
-    }
-  ]
-}
-EOF
-
 # Create role
-aws iam create-role --role-name SageMakerExecutionRole --assume-role-policy-document file://trust-policy.json
+aws iam create-role --role-name SageMakerExecutionRole
 
 # Attach policies
 aws iam attach-role-policy --role-name SageMakerExecutionRole --policy-arn arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
@@ -43,39 +27,42 @@ aws iam attach-role-policy --role-name SageMakerExecutionRole --policy-arn arn:a
 
 ## Quick Start
 
-### 1. Get Latest Image URI
+### 1. Set Environment Variables
 
 ```bash
 # Check available images: https://gallery.ecr.aws/deep-learning-containers/vllm
-# Get latest vLLM DLC image URI
 export CONTAINER_URI="public.ecr.aws/deep-learning-containers/vllm:0.11.0-gpu-py312-cu128-ubuntu22.04-sagemaker-v1.1"
+export IAM_ROLE="SageMakerExecutionRole"
+export HF_TOKEN="your-huggingface-token" 
 ```
 
-### 2. Deploy Endpoint
+### 2. Run Complete Workflow
 
 ```bash
-# update variables in endpoint.py and run
-python endpoint.py
+# Deploy, run inference, and cleanup automatically
+python deploy_and_test_sm_endpoint.py --endpoint-name vllm-test-$(date +%s) --prompt "Write a Python function to calculate fibonacci numbers"
+
+# Alternate with custom parameters
+python deploy_and_test_sm_endpoint.py \
+  --endpoint-name my-vllm-endpoint \
+  --model-id deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
+  --instance-type ml.g5.12xlarge \
+  --prompt "Explain machine learning" \
+  --max-tokens 1000 \
+  --temperature 0.7
 ```
 
-### 3. Run Inference
+## Command Line Options
 
-```bash
-# update endpoint_name in inference.py and run
-python inference.py
-```
-
-## Configuration
-
-### Model Parameters
-- `SM_VLLM_MODEL` - HuggingFace model ID
-- `SM_VLLM_HF_TOKEN` - HuggingFace access token
-
-### Inference Parameters
-- `max_tokens` - Maximum response length
-- `temperature` - Sampling randomness (0-1)
-- `top_p` - Nucleus sampling threshold
-- `top_k` - Top-k sampling limit
+- `--endpoint-name` - SageMaker endpoint name (required)
+- `--container-uri` - DLC image URI (default from env)
+- `--iam-role` - IAM role ARN (default from env)
+- `--instance-type` - Instance type (default: ml.g5.12xlarge)
+- `--model-id` - HuggingFace model ID (default: deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B)
+- `--hf-token` - HuggingFace token (default from env)
+- `--prompt` - Inference prompt (default: code generation example)
+- `--max-tokens` - Maximum response length (default: 2400)
+- `--temperature` - Sampling randomness 0-1 (default: 0.01)
 
 ## Instance Types
 
@@ -90,22 +77,20 @@ Test NixlConnector locally - [NixlConnector Documentation](https://docs.vllm.ai/
 
 ```bash
 # Pull latest vLLM DLC for EC2
-docker pull public.ecr.aws/deep-learning-containers/vllm:0.11.0-gpu-py312-cu128-ubuntu22.04-sagemaker-v1.1
+docker pull public.ecr.aws/deep-learning-containers/vllm:0.11-gpu-py312
 
 # Run container with GPU access
 docker run -it --entrypoint=/bin/bash --gpus=all \
   -v $(pwd):/workspace \
-  public.ecr.aws/deep-learning-containers/vllm:0.11.0-gpu-py312-cu128-ubuntu22.04-sagemaker-v1.1
+  public.ecr.aws/deep-learning-containers/vllm:0.11-gpu-py312
 
 # Inside container, run the NixlConnector test
 export HF_TOKEN= "<TOKEN>"
 ./testNixlConnector.sh
 ```
 
-## Cleanup
+## Notes
 
-```python
-import boto3
-sagemaker = boto3.client('sagemaker')
-sagemaker.delete_endpoint(EndpointName='<endpoint-name>')
-```
+- The script automatically cleans up resources after inference to avoid ongoing costs
+- Deployment waits for endpoint to be ready before running inference
+- All parameters can be set via environment variables or command line arguments
