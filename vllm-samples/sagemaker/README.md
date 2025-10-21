@@ -31,7 +31,7 @@ aws iam attach-role-policy --role-name SageMakerExecutionRole --policy-arn arn:a
 
 ```bash
 # Check available images: https://gallery.ecr.aws/deep-learning-containers/vllm
-export CONTAINER_URI="public.ecr.aws/deep-learning-containers/vllm:0.11.0-gpu-py312-cu128-ubuntu22.04-sagemaker-v1.1"
+export CONTAINER_URI="public.ecr.aws/deep-learning-containers/0.11-gpu-py312"
 export IAM_ROLE="SageMakerExecutionRole"
 export HF_TOKEN="your-huggingface-token" 
 ```
