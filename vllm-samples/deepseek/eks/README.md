@@ -4,6 +4,51 @@ This repository contains scripts and configuration files to deploy a deepseek mo
 
 ![Architecture Diagram](media-files/architecture-diagram.png)
 
+---
+
+## 🚀 Advanced Example: AI-Powered Fraud Detection
+
+**New!** Check out our **complete production-ready fraud detection demo** that showcases:
+- ✅ Real-time financial fraud detection using DeepSeek R1 32B
+- ✅ AI agents with Model Context Protocol (MCP) microservices
+- ✅ Interactive Streamlit UI for fraud analysis
+- ✅ Full deployment on AWS (EKS + ECS + ALB)
+- ✅ Sub-2 second inference latency
+- ✅ Production-ready architecture with cost optimization
+
+### 👉 [**Go to Fraud Detection Demo →**](fraud-detection-demo/README.md)
+
+**What's included:**
+- Complete working production example
+- Step-by-step deployment guide
+- 6 MCP microservices (transaction-risk, identity-verifier, geolocation-checker, etc.)
+- Performance metrics and cost analysis
+- Troubleshooting guide
+
+**Timeline:** ~45 min for basic vLLM setup + ~30 min for full demo deployment
+
+---
+
+## 📚 Two Ways to Use This Repository
+
+### Option 1: Basic vLLM Deployment (This Page)
+Deploy vLLM with DeepSeek R1 32B on Amazon EKS. Perfect for:
+- Learning vLLM deployment basics
+- Testing model inference
+- Building your own applications
+
+**Continue reading below** for the basic deployment guide.
+
+### Option 2: Complete Fraud Detection Demo
+Full production example with AI agents, microservices, and UI. Perfect for:
+- Understanding production AI architectures
+- Seeing vLLM in a real-world use case
+- Learning about MCP and AI agents
+
+**Jump to:** [fraud-detection-demo/README.md](fraud-detection-demo/README.md)
+
+---
+
 ## Prerequisites
 
 Before getting started, ensure you have:
