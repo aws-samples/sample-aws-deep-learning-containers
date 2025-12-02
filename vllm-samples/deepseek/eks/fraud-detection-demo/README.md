@@ -326,8 +326,6 @@ Actions Taken:
 
 ## 📚 Additional Documentation
 
-- **[Demo Use Case](docs/REINVENT_DEMO_USE_CASE.md)** - Complete business case & metrics
-- **[Architecture Design](docs/FINANCIAL_FRAUD_DETECTION_DESIGN.md)** - Technical deep dive
 - **[ECS Deployment Guide](ecs/README.md)** - Detailed ECS setup instructions
 
 ---

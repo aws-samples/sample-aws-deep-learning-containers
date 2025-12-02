@@ -205,7 +205,9 @@ def initialize_agent():
             st.warning(f"Could not connect to {name} MCP server: {e}")
     
     # Create DeepSeek model on EKS
-    vllm_endpoint = os.getenv("VLLM_ENDPOINT", "http://k8s-default-vllmdeep-066fc65d38-1002306241.us-west-2.elb.amazonaws.com")
+    vllm_endpoint = os.getenv("VLLM_ENDPOINT")
+    if not vllm_endpoint:
+        raise ValueError("VLLM_ENDPOINT environment variable must be set to your vLLM ALB endpoint")
     
     model = DeepSeekVLLMModel(
         base_url=vllm_endpoint,
