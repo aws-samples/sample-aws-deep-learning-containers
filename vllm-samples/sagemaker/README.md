@@ -30,8 +30,9 @@ aws iam attach-role-policy --role-name SageMakerExecutionRole --policy-arn arn:a
 ### 1. Set Environment Variables
 
 ```bash
-# Check available images: https://gallery.ecr.aws/deep-learning-containers/vllm
-export CONTAINER_URI="public.ecr.aws/deep-learning-containers/0.11-gpu-py312"
+
+# Note: Using a Public Gallery image to create an SM endpoint is currently not supported
+export CONTAINER_URI="763104351884.dkr.ecr.us-east-1.amazonaws.com/vllm:0.11.2-gpu-py312"
 export IAM_ROLE="SageMakerExecutionRole"
 export HF_TOKEN="your-huggingface-token" 
 ```
@@ -76,13 +77,18 @@ Recommended GPU instances:
 Test NixlConnector locally - [NixlConnector Documentation](https://docs.vllm.ai/en/latest/features/nixl_connector_usage.html#transport-configuration)
 
 ```bash
+# Login to aws ecr
+aws ecr get-login-password --region us-west-2 | docker login \
+--username AWS --password-stdin 763104351884.dkr.ecr.us-east-1.amazonaws.com
+
 # Pull latest vLLM DLC for EC2
-docker pull public.ecr.aws/deep-learning-containers/vllm:0.11-gpu-py312
+# Note: Using a Public Gallery image to create an SM endpoint is currently not supported
+docker pull 763104351884.dkr.ecr.us-east-1.amazonaws.com/vllm:0.11.2-gpu-py312
 
 # Run container with GPU access
 docker run -it --entrypoint=/bin/bash --gpus=all \
   -v $(pwd):/workspace \
-  public.ecr.aws/deep-learning-containers/vllm:0.11-gpu-py312
+  763104351884.dkr.ecr.us-east-1.amazonaws.com/vllm:0.11.2-gpu-py312
 
 # Inside container, run the NixlConnector test
 export HF_TOKEN= "<TOKEN>"

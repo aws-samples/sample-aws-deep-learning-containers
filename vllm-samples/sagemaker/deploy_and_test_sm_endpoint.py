@@ -105,7 +105,7 @@ def main():
         help="DLC image URI",
         default=os.getenv(
             "CONTAINER_URI",
-            "public.ecr.aws/deep-learning-containers/vllm:0.11.0-gpu-py312",
+            "763104351884.dkr.ecr.us-east-1.amazonaws.com/vllm:0.11.2-gpu-py312",
         ),
     )
     parser.add_argument(
