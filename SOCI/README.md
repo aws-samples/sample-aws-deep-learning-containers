@@ -344,7 +344,7 @@ sudo nerdctl run --snapshotter soci --rm --network host public.ecr.aws/deep-lear
 To run an interactive container with SOCI:
 
 ```bash
-sudo nerdctl run --snapshotter soci -it --rm public.ecr.aws/deep-learning-containers/pytorch-training:2.9-gpu-py312-cu130-ubuntu22.04-ec2-v1-soci /bin/bash
+sudo nerdctl run --snapshotter soci -it --rm --network host public.ecr.aws/deep-learning-containers/pytorch-training:2.9-gpu-py312-cu130-ubuntu22.04-ec2-v1-soci /bin/bash
 ```
 
 **Note**: When using SOCI snapshotter to run containers, the lazy loading mechanism will fetch additional layers on-demand as the application accesses files that weren't included in the initial pull. This is why you may see slightly longer initial run times compared to fully-pulled images, but the overall time from pull to run is significantly faster.
