@@ -426,3 +426,12 @@ sys     0m0.031s
 - **Reduced Bandwidth**: Only pulls necessary layers during initial pull
 - **Lazy Loading**: Additional layers are fetched on-demand during runtime
 - **Storage Efficiency**: Reduces initial storage footprint while maintaining full functionality
+
+## References
+
+For more information about SOCI snapshotter, please refer to the following resources:
+
+- **SOCI Snapshotter Official Documentation**: [https://github.com/awslabs/soci-snapshotter](https://github.com/awslabs/soci-snapshotter)
+- **SOCI Snapshotter Getting Started Guide**: [https://github.com/awslabs/soci-snapshotter/blob/main/docs/getting-started.md](https://github.com/awslabs/soci-snapshotter/blob/main/docs/getting-started.md)
+- **AWS Deep Learning Containers Release Notes**: [https://docs.aws.amazon.com/deep-learning-containers/latest/devguide/dlc-release-notes.html](https://docs.aws.amazon.com/deep-learning-containers/latest/devguide/dlc-release-notes.html)
+- **AWS Deep Learning Containers Public Gallery**: [https://gallery.ecr.aws/deep-learning-containers](https://gallery.ecr.aws/deep-learning-containers)
