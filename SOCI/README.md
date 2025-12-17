@@ -11,22 +11,13 @@ A SOCI index, which enables lazy loading of container images, consists of two ke
    - **TOC**: A table of contents containing file metadata and corresponding offset information in the decompressed TAR archive
    - **zInfo**: A collection of checkpoints representing compression engine states at various points in the layer
 
-## SOCI Index Manifest V1 vs V2
+## SOCI Index Manifest Version
 
-SOCI Index Manifest v1 and SOCI Index Manifest v2 both allow lazily loading container images. SOCI Index Manifest v1 is a standalone artifact that can be discovered using the OCI Referrers API. SOCI Index Manifest v2 uses SOCI-enabled images where the SOCI index is bundled with the original image into a single, multi-architecture image. The SOCI snapshotter v0.10.0 will no longer consume SOCI Index Manifest v1 by default. DLC uses v2 SOCI index.
-
-| Feature | SOCI Index V1 | SOCI Index V2 |
-|---------|---------------|---------------|
-| Structure | Separate artifact from container image | Bound to container image via image index |
-| Relationship | Loose coupling through Subject metadata | Direct link through image index |
-| Image Modification | No modification required | Requires image index modification |
-| Management | Challenges with replication, deletion, and consistency | Improved scalability and consistency |
-
-![v1](./v1.jpg) ![v2](./v2.jpg)
+DLC uses SOCI index Manifest v2. SOCI Index Manifest v1 and SOCI Index Manifest v2 both allow lazily loading container images. SOCI Index Manifest v1 is a standalone artifact that can be discovered using the OCI Referrers API. SOCI Index Manifest v2 uses SOCI-enabled images where the SOCI index is bundled with the original image into a single, multi-architecture image. The SOCI snapshotter v0.10.0 will no longer consume SOCI Index Manifest v1 by default. For detaliled difference between v1 and v2 please refer to [soci-index-manifest-v2](https://github.com/awslabs/soci-snapshotter/blob/main/docs/soci-index-manifest-v2.md)
 
 ## DLC SOCI Supported Frameworks
 
-Deep Learning Containers (DLC) team provides SOCI index for the following images both in private registry and [public gallery](https://gallery.ecr.aws/deep-learning-containers): PyTorch Training (x86, arm64), vLLM (x86, arm64), and SGLang.
+Deep Learning Containers (DLC) provides SOCI index for the following images both in private registry and [public gallery](https://gallery.ecr.aws/deep-learning-containers): PyTorch Training (x86, arm64), vLLM (x86, arm64), and SGLang.
 
 ### Sample URIs
 
@@ -74,15 +65,14 @@ For SOCI index enabled images, DLC adds `-soci` as a tag suffix. For the above i
 
 ### Supported Versions
 
-For the latest version releases, please refer to our [release notes](https://docs.aws.amazon.com/deep-learning-containers/latest/devguide/dlc-release-notes.html).
+For the latest supported version releases, please refer to DLC [public gallery](https://gallery.ecr.aws/deep-learning-containers) to check the tags.
 
-| Repository Name | Tags |
-|-----------------|------|
-| pytorch-training | 2.9-cpu-py312-ubuntu22.04-sagemaker-v1-soci<br>2.9-gpu-py312-cu130-ubuntu22.04-sagemaker-v1-soci<br>2.9-cpu-py312-ubuntu22.04-ec2-v1-soci<br>2.9-gpu-py312-cu130-ubuntu22.04-ec2-v1-soci<br>2.8-cpu-py312-ubuntu22.04-sagemaker-v1-soci<br>2.8-gpu-py312-cu129-ubuntu22.04-sagemaker-v1-soci<br>2.8-cpu-py312-ubuntu22.04-ec2-v1-soci<br>2.8-gpu-py312-cu129-ubuntu22.04-ec2-v1-soci<br>2.7-cpu-py312-ubuntu22.04-sagemaker-v1-soci<br>2.7-gpu-py312-cu128-ubuntu22.04-sagemaker-v1-soci<br>2.7-cpu-py312-ubuntu22.04-ec2-v1-soci<br>2.7-gpu-py312-cu128-ubuntu22.04-ec2-v1-soci |
-| pytorch-training-arm64 | 2.7-gpu-py312-cu128-ubuntu22.04-ec2-v1-soci |
-| vllm-arm64 | 0.10-gpu-py312-cu129-ubuntu22.04-ec2-v1-soci |
-| vllm | 0.10-gpu-py312-cu128-ubuntu22.04-rayserve-ec2-v1-soci<br>0.11-gpu-py312-cu129-ubuntu22.04-ec2-v1-soci<br>0.11-gpu-py312-cu129-ubuntu22.04-sagemaker-v1-soci<br>0.12-gpu-py312-cu129-ubuntu22.04-ec2-v1-soci<br>0.12-gpu-py312-cu129-ubuntu22.04-sagemaker-v1-soci |
-| sglang | 0.5-gpu-py312-cu129-ubuntu22.04-sagemaker-v1-soci |
+- [Pytorch Training](https://gallery.ecr.aws/deep-learning-containers/pytorch-training)
+- [Pytorch Training arm64](https://gallery.ecr.aws/deep-learning-containers/pytorch-training-arm64)
+- [vLLM](https://gallery.ecr.aws/deep-learning-containers/vllm)
+- [vLLM arm64](https://gallery.ecr.aws/deep-learning-containers/vllm-arm64)
+- [SGLang](https://gallery.ecr.aws/deep-learning-containers/sglang)
+
 
 ## Getting Started with SOCI Index
 
