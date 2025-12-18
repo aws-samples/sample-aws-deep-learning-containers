@@ -102,11 +102,12 @@ For the latest supported version releases, please refer to DLC [public gallery](
 ### Environment
 
 - **Instance Type**: c5.24xlarge
-- **AMI**: Deep Learning Base OSS Nvidia Driver GPU AMI (Amazon Linux 2023) 20250701
+- **AMI**: Deep Learning Base OSS Nvidia Driver GPU AMI (Amazon Linux 2023) 
+  - At the time of writing, we are using AMI date 20250701
 
 ### Common Setup: Install and Configure SOCI Snapshotter
 
-Both nerdctl and Finch use the same SOCI snapshotter. Follow these steps to set it up:
+Both Finch and nerdctl use the same SOCI snapshotter. Follow these steps to set it up:
 
 #### Prerequisites
 
@@ -218,7 +219,89 @@ Ensure the config includes the following section:
 
 After setting up the SOCI snapshotter, choose one of the following container clients:
 
-### Option 1: Using nerdctl
+### Option 1: Using Finch (Recommended for Ease of Use)
+
+[Finch](https://runfinch.com/) is an open source client for container development that provides a simpler, streamlined experience. Finch uses the same SOCI snapshotter configured above.
+
+**Advantages of Finch:**
+- Simpler command-line interface
+- Single package installation via dnf
+- **CNI plugins pre-configured** - Unlike nerdctl, Finch includes built-in network configuration, so you don't need to use `--network host` or manually configure CNI plugins
+- Ideal for users who want a streamlined experience
+
+#### Install Finch
+
+Finch is packaged in the standard Amazon Linux repositories, making installation straightforward:
+
+```bash
+sudo dnf install runfinch-finch
+```
+
+Verify Finch is installed correctly:
+
+```bash
+sudo finch run public.ecr.aws/finch/hello-finch:latest
+```
+
+**Expected output:**
+
+```
+.....                                      
+
+                            @@@@@@@@@@@@@@@@@@@                                 
+                        @@@@@@@@@@@@    @@@@@@@@@@@                             
+                      @@@@@@@                  @@@@@@@                          
+                    @@@@@@                        @@@@@@                        
+                  @@@@@@                            @@@@@                       
+                 @@@@@                      @@@#     @@@@@@@@@                  
+                @@@@@                     @@   @@@       @@@@@@@@@@             
+                @@@@%                     @     @@            @@@@@@@@@@@       
+                @@@@                                               @@@@@@@@     
+                @@@@                                         @@@@@@@@@@@&       
+                @@@@@                                  &@@@@@@@@@@@             
+                 @@@@@                               @@@@@@@@                   
+                  @@@@@                            @@@@@(                       
+                   @@@@@@                        @@@@@@                         
+                     @@@@@@@                  @@@@@@@                           
+                        @@@@@@@@@@@@@@@@@@@@@@@@@@                              
+                            @@@@@@@@@@@@@@@@@@
+
+
+Hello from Finch!
+
+Visit us @ github.com/runfinch
+```
+
+#### Pull SOCI Images with Finch
+
+Pull a SOCI-enabled DLC image using Finch:
+
+```bash
+sudo finch pull --snapshotter soci public.ecr.aws/deep-learning-containers/pytorch-training:2.8-gpu-py312-cu129-ubuntu22.04-ec2-v1-soci
+```
+
+**Expected output:**
+
+```
+config-sha256:a4f4e7578325b0651818c5605b87f9eef2ba5a54dcfa896dabe448a6c4c468be:    exists         |++++++++++++++++++++++++++++++++++++++| 
+elapsed: 12.3s
+```
+
+#### Run Containers with Finch
+
+Run an interactive container with SOCI lazy loading:
+
+```bash
+sudo finch run --snapshotter soci -it --rm public.ecr.aws/deep-learning-containers/pytorch-training:2.8-gpu-py312-cu129-ubuntu22.04-ec2-v1-soci /bin/bash
+```
+
+**Note**: Just like with nerdctl, you must use the `--snapshotter soci` flag with Finch to enable SOCI lazy loading. Without this flag, Finch will download the entire image.
+
+For more information about Finch, visit the [Finch documentation](https://runfinch.com/docs/managing-finch/linux/installation/).
+
+---
+
+### Option 2: Using nerdctl (Advanced Use Cases)
 
 Provides more control and flexibility for advanced use cases.
 
@@ -375,88 +458,6 @@ sudo nerdctl run --snapshotter soci -it --rm --network host public.ecr.aws/deep-
 ```
 
 **Note**: When using SOCI snapshotter to run containers, the lazy loading mechanism will fetch additional layers on-demand as the application accesses files that weren't included in the initial pull. This is why you may see slightly longer initial run times compared to fully-pulled images, but the overall time from pull to run is significantly faster.
-
----
-
-### Option 2: Using Finch (Simpler Alternative)
-
-[Finch](https://runfinch.com/) is an open source client for container development that provides a simpler alternative to nerdctl. Finch uses the same SOCI snapshotter configured above.
-
-**Advantages of Finch:**
-- Simpler command-line interface compared to nerdctl
-- Single package installation via dnf
-- **CNI plugins pre-configured** - Unlike nerdctl, Finch includes built-in network configuration, so you don't need to use `--network host` or manually configure CNI plugins
-- Ideal for users who want a streamlined experience
-
-#### Install Finch
-
-Finch is packaged in the standard Amazon Linux repositories, making installation straightforward:
-
-```bash
-sudo dnf install runfinch-finch
-```
-
-Verify Finch is installed correctly:
-
-```bash
-sudo finch run public.ecr.aws/finch/hello-finch:latest
-```
-
-**Expected output:**
-
-```
-.....                                      
-
-                            @@@@@@@@@@@@@@@@@@@                                 
-                        @@@@@@@@@@@@    @@@@@@@@@@@                             
-                      @@@@@@@                  @@@@@@@                          
-                    @@@@@@                        @@@@@@                        
-                  @@@@@@                            @@@@@                       
-                 @@@@@                      @@@#     @@@@@@@@@                  
-                @@@@@                     @@   @@@       @@@@@@@@@@             
-                @@@@%                     @     @@            @@@@@@@@@@@       
-                @@@@                                               @@@@@@@@     
-                @@@@                                         @@@@@@@@@@@&       
-                @@@@@                                  &@@@@@@@@@@@             
-                 @@@@@                               @@@@@@@@                   
-                  @@@@@                            @@@@@(                       
-                   @@@@@@                        @@@@@@                         
-                     @@@@@@@                  @@@@@@@                           
-                        @@@@@@@@@@@@@@@@@@@@@@@@@@                              
-                            @@@@@@@@@@@@@@@@@@
-
-
-Hello from Finch!
-
-Visit us @ github.com/runfinch
-```
-
-#### Pull SOCI Images with Finch
-
-Pull a SOCI-enabled DLC image using Finch:
-
-```bash
-sudo finch pull --snapshotter soci public.ecr.aws/deep-learning-containers/pytorch-training:2.8-gpu-py312-cu129-ubuntu22.04-ec2-v1-soci
-```
-
-**Expected output:**
-
-```
-config-sha256:a4f4e7578325b0651818c5605b87f9eef2ba5a54dcfa896dabe448a6c4c468be:    exists         |++++++++++++++++++++++++++++++++++++++| 
-elapsed: 12.3s
-```
-
-#### Run Containers with Finch
-
-Run an interactive container with SOCI lazy loading:
-
-```bash
-sudo finch run --snapshotter soci -it --rm public.ecr.aws/deep-learning-containers/pytorch-training:2.8-gpu-py312-cu129-ubuntu22.04-ec2-v1-soci /bin/bash
-```
-
-**Note**: Just like with nerdctl, you must use the `--snapshotter soci` flag with Finch to enable SOCI lazy loading. Without this flag, Finch will download the entire image.
-
-For more information about Finch, visit the [Finch documentation](https://runfinch.com/docs/managing-finch/linux/installation/).
 
 ## Performance Comparison: SOCI vs Docker
 
