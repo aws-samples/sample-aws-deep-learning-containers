@@ -1,5 +1,29 @@
 # SOCI Index for AWS Deep Learning Containers
 
+## Table of Contents
+
+- [Background on SOCI Index](#background-on-soci-index)
+  - [Why SOCI Matters: With vs Without Comparison](#why-soci-matters-with-vs-without-comparison)
+  - [SOCI Index Components](#soci-index-components)
+- [SOCI Index Manifest Version](#soci-index-manifest-version)
+- [DLC SOCI Supported Frameworks](#dlc-soci-supported-frameworks)
+  - [Sample URIs](#sample-uris)
+  - [DLC SOCI Tag Introduction](#dlc-soci-tag-introduction)
+  - [Supported Versions](#supported-versions)
+- [Getting Started with SOCI Index](#getting-started-with-soci-index)
+  - [Environment](#environment)
+  - [Common Setup: Install and Configure SOCI Snapshotter](#common-setup-install-and-configure-soci-snapshotter)
+    - [Prerequisites](#prerequisites)
+    - [Install the SOCI Snapshotter](#install-the-soci-snapshotter)
+    - [Configure SOCI Snapshotter](#configure-soci-snapshotter)
+  - [Choose Your Container Client](#choose-your-container-client)
+    - [Option 1: Using Finch (Recommended for Ease of Use)](#option-1-using-finch-recommended-for-ease-of-use)
+    - [Option 2: Using nerdctl (Advanced Use Cases)](#option-2-using-nerdctl-advanced-use-cases)
+- [Performance Comparison: SOCI vs Docker](#performance-comparison-soci-vs-docker)
+- [References](#references)
+
+---
+
 ## Background on SOCI Index
 
 The Software Component Index (SOCI) is a technology that enables efficient container image management through selective file downloading. It uses a layer-based indexing system to map file locations within container images, allowing containers to start with only the necessary files loaded (lazy loading). This approach significantly reduces network bandwidth usage and improves container startup times, making it particularly valuable for organizations managing large container images in cloud environments.
@@ -404,60 +428,17 @@ public.ecr.aws/deep-learning-containers/pytorch-training    2.9-gpu-py312-cu130-
 {"level":"info","msg":"fuse operation count for image sha256:ca3e4389bb850cf3f43128b98897ac4522e20f354452a41139cfe7f45431da22: node.Getattr = 13","time":"2025-12-17T00:06:33.005839399Z"}
 ```
 
-### Run Containers with SOCI Snapshotter
+#### Run Containers with nerdctl
 
-#### Understanding Snapshotter Behavior
-
-**With `--snapshotter soci` flag:**
-- Uses SOCI lazy loading mechanism
-- Only downloads necessary layers initially
-- Fetches additional layers on-demand during runtime
-- Faster time from pull to run
-- Best for large images where you want immediate startup
-
-**Without `--snapshotter soci` flag:**
-- Uses default overlayfs snapshotter
-- Must download ALL image layers before container can start
-- No lazy loading benefits
-- Takes significantly longer to pull the complete image (e.g., 4m26s for 17.6GB image)
-- Container will work normally once all layers are downloaded
-
-**Example comparison:**
-
-```bash
-# WITHOUT --snapshotter soci (will need to download all layers)
-sudo nerdctl run -it --rm --network host public.ecr.aws/deep-learning-containers/pytorch-training:2.9-gpu-py312-cu130-ubuntu22.04-ec2-v1-soci /bin/bash
-# This will download the ENTIRE image (~17.6GB) before running
-
-# WITH --snapshotter soci (lazy loading enabled)
-sudo nerdctl run --snapshotter soci -it --rm --network host public.ecr.aws/deep-learning-container
-s/pytorch-training:2.9-gpu-py312-cu130-ubuntu22.04-ec2-v1-soci /bin/bash
-# This will use the SOCI index and only download necessary layers
-```
-
-**Recommendation**: Always use `--snapshotter soci` flag with SOCI-enabled images (images with `-soci` suffix) to benefit from lazy loading. The flag is required to activate the SOCI lazy loading mechanism.
-
-#### Basic Run Command
-
-```bash
-sudo nerdctl run --snapshotter soci --rm --network host public.ecr.aws/deep-learning-containers/pytorch-training:2.9-gpu-py312-cu130-ubuntu22.04-ec2-v1-soci 'python -c "import torch; print(torch.__version__)"'
-```
-
-**Output:**
-
-```
-2.9.0+cu130
-```
-
-#### Interactive Container
-
-To run an interactive container with SOCI:
+Run an interactive container with SOCI lazy loading:
 
 ```bash
 sudo nerdctl run --snapshotter soci -it --rm --network host public.ecr.aws/deep-learning-containers/pytorch-training:2.9-gpu-py312-cu130-ubuntu22.04-ec2-v1-soci /bin/bash
 ```
 
-**Note**: When using SOCI snapshotter to run containers, the lazy loading mechanism will fetch additional layers on-demand as the application accesses files that weren't included in the initial pull. This is why you may see slightly longer initial run times compared to fully-pulled images, but the overall time from pull to run is significantly faster.
+**Note**: You must use the `--snapshotter soci` flag with nerdctl to enable SOCI lazy loading. Without this flag, nerdctl will download the entire image. Additionally, since nerdctl requires CNI configuration, the `--network host` flag is used in this example.
+
+---
 
 ## Performance Comparison: SOCI vs Docker
 
@@ -511,13 +492,13 @@ sys     0m0.023s
 #### SOCI Runtime
 
 ```bash
-time sudo nerdctl run --snapshotter soci --rm --network host public.ecr.aws/deep-learning-containers/pytorch-training:2.9-gpu-py312-cu130-ubuntu22.04-ec2-v1 'python -c "import torch; print(torch.__version__)"'
+time sudo nerdctl run --snapshotter soci --rm --network host public.ecr.aws/deep-learning-containers/pytorch-training:2.9-gpu-py312-cu130-ubuntu22.04-ec2-v1-soci 'python -c "import torch; print(torch.__version__)"'
 ```
 
 **Output:**
 
 ```
-public.ecr.aws/deep-learning-containers/pytorch-training:2.9-gpu-py312-cu130-ubuntu22.04-ec2-v1: resolved       |++++++++++++++++++++++++++++++++++++++| 
+public.ecr.aws/deep-learning-containers/pytorch-training:2.9-gpu-py312-cu130-ubuntu22.04-ec2-v1-soci: resolved       |++++++++++++++++++++++++++++++++++++++| 
 manifest-sha256:10f1280343bfe3e9acb43bbcf2ac78e0bf636df6181c1dbbfa6e84ac285d0948:    done           |++++++++++++++++++++++++++++++++++++++| 
 config-sha256:d007250deb6300c72286af12cf0510cf69b0c7227e4b4d50783a03ac8d917275:      exists         |++++++++++++++++++++++++++++++++++++++| 
 elapsed: 0.3 s     total:  7.3 Ki (24.3 KiB/s)                                      
