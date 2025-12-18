@@ -319,7 +319,7 @@ Run an interactive container with SOCI lazy loading:
 sudo finch run --snapshotter soci -it --rm public.ecr.aws/deep-learning-containers/pytorch-training:2.8-gpu-py312-cu129-ubuntu22.04-ec2-v1-soci /bin/bash
 ```
 
-**Note**: Just like with nerdctl, you must use the `--snapshotter soci` flag with Finch to enable SOCI lazy loading. Without this flag, Finch will download the entire image.
+**Note**: You must use the `--snapshotter soci` flag with Finch to enable SOCI lazy loading. Without this flag, Finch will download the entire image.
 
 For more information about Finch, visit the [Finch documentation](https://runfinch.com/docs/managing-finch/linux/installation/).
 
@@ -467,7 +467,7 @@ REPOSITORY                                                 TAG                  
 public.ecr.aws/deep-learning-containers/pytorch-training   2.9-gpu-py312-cu130-ubuntu22.04-ec2-v1        d007250deb63   32 hours ago   17.6GB
 ```
 
-**Analysis**: The image size is 17.6GB. Using Docker to pull the full image takes **4m26.405s**, while SOCI only pulls the index and necessary layers, taking just **8.9s**. The remaining layers are pulled during runtime as needed.
+**Analysis**: The image size is 17.6GB. Using Docker to pull the full image takes **4m26.405s**, while SOCI only pulls the index and necessary layers, taking just **8.9s**(using nerdctl). The remaining layers are pulled during runtime as needed.
 
 ### Container Runtime Comparison
 
