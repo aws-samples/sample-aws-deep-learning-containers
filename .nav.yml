@@ -1,11 +1,11 @@
 nav:
   - index.md
   - Training:
-    - EKS Training: tutorials/content/training/eks/README.md
+    - EKS Training: training/eks/README.md
   - Inference:
-    - vLLM on SageMaker: tutorials/content/vllm-samples/sagemaker/README.md
-    - DeepSeek on EKS: tutorials/content/vllm-samples/deepseek/eks/README.md
-    - Fraud Detection Demo: tutorials/content/vllm-samples/deepseek/eks/fraud-detection-demo/README.md
+    - vLLM on SageMaker: vllm-samples/sagemaker/README.md
+    - DeepSeek on EKS: vllm-samples/deepseek/eks/README.md
+    - Fraud Detection Demo: vllm-samples/deepseek/eks/fraud-detection-demo/README.md
   - Integrations:
-    - MLflow: tutorials/content/mlflow/dlc-with-mlflow/README.md
-    - SOCI: tutorials/content/SOCI/README.md
+    - MLflow: mlflow/dlc-with-mlflow/README.md
+    - SOCI: SOCI/README.md
