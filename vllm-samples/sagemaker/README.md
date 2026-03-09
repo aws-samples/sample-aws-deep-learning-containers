@@ -4,6 +4,8 @@ Deploy and run inference on vLLM models using AWS SageMaker and vLLM DLC.
 
 ## Files
 
+The following files are available in the [aws-samples/sample-aws-deep-learning-containers](https://github.com/aws-samples/sample-aws-deep-learning-containers) repository:
+
 - `deploy_and_test_sm_endpoint.py` - Complete workflow: deploy, inference, and cleanup
 - `testNixlConnector.sh` - Multi-GPU NixlConnector test script
 
