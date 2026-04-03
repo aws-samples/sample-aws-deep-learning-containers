@@ -14,7 +14,6 @@ Step-by-step guides for using AWS Deep Learning Containers.
 
 ## XGBoost
 
-- [Prompt Injection Detection](xgboost/prompt-injection-detection/README.md) - Build an LLM guardrail classifier with XGBoost on SageMaker
 - [Distributed Fraud Detection](xgboost/fraud-detection-distributed/README.md) - Multi-GPU distributed training with XGBoost and Dask
 
 ## Integrations

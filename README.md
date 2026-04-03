@@ -12,7 +12,6 @@ This repository contains sample code and configurations for using AWS Deep Learn
   - **dlc-with-mlflow/**: Sample for integrating AWS DLCs with SageMaker managed MLflow for training. See [README](mlflow/dlc-with-mlflow/README.md) for detailed instructions.
 
 - **xgboost/**: Samples for training XGBoost models using the SageMaker XGBoost Deep Learning Container
-  - **prompt-injection-detection/**: Train an LLM guardrail classifier to detect prompt injection attacks. See [README](xgboost/prompt-injection-detection/README.md).
   - **fraud-detection-distributed/**: Distributed multi-GPU fraud detection with XGBoost and Dask. See [README](xgboost/fraud-detection-distributed/README.md).
 
 ## AWS Deep Learning Containers

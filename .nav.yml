@@ -7,7 +7,6 @@ nav:
     - DeepSeek on EKS: vllm-samples/deepseek/eks/README.md
     - Fraud Detection Demo: vllm-samples/deepseek/eks/fraud-detection-demo/README.md
   - XGBoost:
-    - Prompt Injection Detection: xgboost/prompt-injection-detection/README.md
     - Distributed Fraud Detection: xgboost/fraud-detection-distributed/README.md
   - Integrations:
     - MLflow: mlflow/dlc-with-mlflow/README.md
