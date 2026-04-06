@@ -5,16 +5,13 @@ Step-by-step guides for using AWS Deep Learning Containers.
 ## Training
 
 - [EKS Training](training/eks/README.md) - Train models on Amazon EKS with PyTorch FSDP
+- [Distributed Fraud Detection](xgboost/fraud-detection-distributed/README.md) - Multi-GPU distributed training with XGBoost and Dask
 
 ## Inference
 
 - [vLLM on SageMaker](vllm-samples/sagemaker/README.md) - Deploy vLLM on SageMaker endpoints
 - [DeepSeek on EKS](vllm-samples/deepseek/eks/README.md) - Deploy DeepSeek models with vLLM on EKS
 - [Fraud Detection Demo](vllm-samples/deepseek/eks/fraud-detection-demo/README.md) - End-to-end fraud detection with DeepSeek
-
-## XGBoost
-
-- [Distributed Fraud Detection](xgboost/fraud-detection-distributed/README.md) - Multi-GPU distributed training with XGBoost and Dask
 
 ## Integrations
 
