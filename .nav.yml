@@ -2,12 +2,11 @@ nav:
   - index.md
   - Training:
     - EKS Training: training/eks/README.md
+    - Distributed Fraud Detection (XGBoost): xgboost/fraud-detection-distributed/README.md
   - Inference:
     - vLLM on SageMaker: vllm-samples/sagemaker/README.md
     - DeepSeek on EKS: vllm-samples/deepseek/eks/README.md
     - Fraud Detection Demo: vllm-samples/deepseek/eks/fraud-detection-demo/README.md
-  - XGBoost:
-    - Distributed Fraud Detection: xgboost/fraud-detection-distributed/README.md
   - Integrations:
     - MLflow: mlflow/dlc-with-mlflow/README.md
     - SOCI: SOCI/README.md
