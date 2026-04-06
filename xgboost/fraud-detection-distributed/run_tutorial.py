@@ -77,12 +77,12 @@ def generate_and_upload(bucket, region, num_samples, fraud_rate, instance_type, 
     print(f"Total GPUs: {total_gpus}, creating {num_partitions} partitions")
 
     s3_prefix = "xgboost-fraud-distributed"
-    session = sagemaker.Session(boto_session=boto3.Session(region_name=region))
     s3_client = boto3.client("s3", region_name=region)
 
     for split_name, split_df in [("train", train_df), ("validation", val_df)]:
-        partitions = np.array_split(split_df, num_partitions)
-        for i, part in enumerate(partitions):
+        indices = np.array_split(np.arange(len(split_df)), num_partitions)
+        for i, idx in enumerate(indices):
+            part = split_df.iloc[idx]
             key = f"{s3_prefix}/{split_name}/part-{i:04d}.csv"
             csv_body = part.to_csv(index=False, header=False)
             s3_client.put_object(Bucket=bucket, Key=key, Body=csv_body)
@@ -98,7 +98,7 @@ def train_model(role, bucket, region, instance_type, instance_count, train_s3, v
     """Launch distributed GPU training with Dask."""
     session = sagemaker.Session(boto_session=boto3.Session(region_name=region))
 
-    xgb_image = image_uris.retrieve(framework="xgboost", region=region, version="3.0-5")
+    xgb_image = f"246618743249.dkr.ecr.{region}.amazonaws.com/sagemaker-xgboost:3.0-5"
     print(f"XGBoost image: {xgb_image}")
 
     estimator = Estimator(
