@@ -16,7 +16,7 @@ Fraud detection systems process millions of transactions and must retrain freque
 **Why distributed GPU training?**
 - Train on datasets with millions of rows in minutes instead of hours
 - Dask utilizes all GPUs across one or more instances
-- Cost-effective — faster training means lower total compute cost
+- Cost-effective - faster training means lower total compute cost
 - Available since XGBoost 1.5-1 on SageMaker
 
 ## Prerequisites
@@ -28,7 +28,7 @@ Fraud detection systems process millions of transactions and must retrain freque
 
 ## Files
 
-- `run_tutorial.py` — End-to-end orchestration: synthetic data generation, training, deployment, inference, cleanup
+- `run_tutorial.py` - End-to-end orchestration: synthetic data generation, training, deployment, inference, cleanup
 
 ## Quick Start
 
@@ -63,6 +63,22 @@ python run_tutorial.py \
   --instance-count 2 \
   --num-samples 2000000
 ```
+
+## Command Line Options
+
+- `--role` - SageMaker execution role ARN (required)
+- `--bucket` - S3 bucket for data and artifacts (required)
+- `--region` - AWS region (default: us-west-2)
+- `--image-uri` - XGBoost container image URI (default: auto-generated for region)
+- `--instance-type` - Training instance type (default: ml.g5.12xlarge)
+- `--instance-count` - Number of training instances (default: 1)
+- `--deploy-instance-type` - Endpoint instance type (default: ml.m5.large)
+- `--num-samples` - Number of synthetic transactions (default: 500000)
+- `--fraud-rate` - Fraction of fraudulent transactions (default: 0.02)
+- `--num-round` - Number of XGBoost boosting rounds (default: 200)
+- `--max-depth` - Maximum tree depth (default: 8)
+- `--skip-deploy` - Skip deployment and inference
+- `--skip-cleanup` - Skip endpoint cleanup
 
 ## Step-by-Step Walkthrough
 
@@ -120,15 +136,15 @@ estimator = Estimator(
     },
 )
 
-# FullyReplicated — Dask handles data distribution internally
+# FullyReplicated - Dask handles data distribution internally
 train_input = TrainingInput(s3_data=train_s3_uri, distribution="FullyReplicated")
 estimator.fit({"train": train_input, "validation": val_input})
 ```
 
 Key hyperparameters for distributed GPU training:
-- `tree_method: gpu_hist` — enables GPU-accelerated histogram-based training
-- `use_dask_gpu_training: "true"` — enables Dask multi-GPU coordination
-- `scale_pos_weight: 49` — compensates for 2% fraud rate (98/2 ≈ 49)
+- `tree_method: gpu_hist` - enables GPU-accelerated histogram-based training
+- `use_dask_gpu_training: "true"` - enables Dask multi-GPU coordination
+- `scale_pos_weight: 49` - compensates for 2% fraud rate (98/2 ≈ 49)
 
 ### Step 4: Deploy and Test
 
@@ -183,7 +199,7 @@ predictor.delete_endpoint()
 
 ## References
 
-- [XGBoost Algorithm — Amazon SageMaker AI](https://docs.aws.amazon.com/sagemaker/latest/dg/xgboost.html)
+- [XGBoost Algorithm - Amazon SageMaker AI](https://docs.aws.amazon.com/sagemaker/latest/dg/xgboost.html)
 - [SageMaker XGBoost Distributed GPU Training](https://aws.amazon.com/blogs/machine-learning/amazon-sagemaker-xgboost-now-offers-fully-distributed-gpu-training/)
 - [Dask Best Practices](https://docs.dask.org/en/stable/best-practices.html)
 - [SageMaker XGBoost Container Registry Paths](https://docs.aws.amazon.com/sagemaker/latest/dg-ecr-paths/sagemaker-algo-docker-registry-paths.html)
