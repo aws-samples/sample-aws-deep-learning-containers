@@ -38,6 +38,7 @@ def parse_args():
     parser.add_argument("--role", type=str, required=True, help="SageMaker execution role ARN")
     parser.add_argument("--bucket", type=str, required=True, help="S3 bucket")
     parser.add_argument("--region", type=str, default="us-west-2")
+    parser.add_argument("--image-uri", type=str, default=None, help="XGBoost container image URI (default: auto-generated for region)")
     parser.add_argument("--instance-type", type=str, default="ml.g5.12xlarge")
     parser.add_argument("--instance-count", type=int, default=1)
     parser.add_argument("--deploy-instance-type", type=str, default="ml.m5.large")
@@ -94,11 +95,11 @@ def generate_and_upload(bucket, region, num_samples, fraud_rate, instance_type, 
     return train_s3, val_s3, scale_pos_weight
 
 
-def train_model(role, bucket, region, instance_type, instance_count, train_s3, val_s3, scale_pos_weight, num_round, max_depth):
+def train_model(role, bucket, region, instance_type, instance_count, train_s3, val_s3, scale_pos_weight, num_round, max_depth, image_uri=None):
     """Launch distributed GPU training with Dask."""
     session = sagemaker.Session(boto_session=boto3.Session(region_name=region))
 
-    xgb_image = f"246618743249.dkr.ecr.{region}.amazonaws.com/sagemaker-xgboost:3.0-5"
+    xgb_image = image_uri or f"246618743249.dkr.ecr.{region}.amazonaws.com/sagemaker-xgboost:3.0-5"
     print(f"XGBoost image: {xgb_image}")
 
     estimator = Estimator(
@@ -165,7 +166,7 @@ def main():
     print(f"\n=== Step 2: Distributed GPU training ({args.instance_count}× {args.instance_type}) ===")
     estimator = train_model(
         args.role, args.bucket, args.region, args.instance_type, args.instance_count,
-        train_s3, val_s3, scale_pos_weight, args.num_round, args.max_depth,
+        train_s3, val_s3, scale_pos_weight, args.num_round, args.max_depth, args.image_uri,
     )
 
     if not args.skip_deploy:
