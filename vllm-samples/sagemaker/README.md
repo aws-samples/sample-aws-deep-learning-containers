@@ -20,7 +20,7 @@ The following files are available in the [aws-samples/sample-aws-deep-learning-c
 
 ```bash
 # Create role
-aws iam create-role --role-name SageMakerExecutionRole
+aws iam create-role --role-name SageMakerExecutionRole --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"sagemaker.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
 
 # Attach policies
 aws iam attach-role-policy --role-name SageMakerExecutionRole --policy-arn arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
