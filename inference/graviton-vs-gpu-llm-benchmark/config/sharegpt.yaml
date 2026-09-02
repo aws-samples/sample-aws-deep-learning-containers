@@ -1,0 +1,27 @@
+# ShareGPT (optional, rate-based): replay conversational prompts from inference-perf's
+# public dataset for a realistic input/output length mix. Not part of the validated
+# fixed-length matrix; provided as a realistic-traffic add-on, best on vLLM/GPU.
+load:
+  type: poisson
+  num_workers: 4
+  stages:
+    - rate: 4
+      duration: 300
+api:
+  type: completion
+  streaming: true
+data:
+  type: shareGPT
+server:
+  type: vllm
+  model_name: ${MODEL_NAME}
+  base_url: ${BASE_URL}
+  ignore_eos: true
+tokenizer:
+  pretrained_model_name_or_path: ${TOKENIZER}
+report:
+  request_lifecycle: { summary: true, per_stage: true }
+storage:
+  local_storage:
+    path: ${OUTPUT_DIR}
+    report_file_prefix: ${SCENARIO}

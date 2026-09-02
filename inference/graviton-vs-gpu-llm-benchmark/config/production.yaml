@@ -1,0 +1,36 @@
+# Production (rate-based): Poisson arrivals at increasing request rates.
+# StandardLoadStage uses {rate, duration}. Stage 0 (rate 1 / 300 s) is the
+# latency baseline; later stages ramp arrival rate to find the sustained
+# throughput ceiling. Meaningful mainly for vLLM on GPU (continuous batching);
+# CPU / llama.cpp servers queue rather than batch, so use the concurrent
+# scenarios (sweep.yaml) there.
+load:
+  type: poisson
+  num_workers: 8
+  stages:
+    - rate: 1
+      duration: 300
+    - rate: 4
+      duration: 120
+    - rate: 16
+      duration: 120
+api:
+  type: completion
+  streaming: true
+data:
+  type: random
+  input_distribution:  { type: fixed, mean: 512, std_dev: 0, min: 512, max: 512, total_count: 4000 }
+  output_distribution: { type: fixed, mean: 128, std_dev: 0, min: 128, max: 128, total_count: 4000 }
+server:
+  type: vllm
+  model_name: ${MODEL_NAME}
+  base_url: ${BASE_URL}
+  ignore_eos: true
+tokenizer:
+  pretrained_model_name_or_path: ${TOKENIZER}
+report:
+  request_lifecycle: { summary: true, per_stage: true }
+storage:
+  local_storage:
+    path: ${OUTPUT_DIR}
+    report_file_prefix: ${SCENARIO}

@@ -1,0 +1,40 @@
+# Saturation: wide concurrency sweep (conc 1/4/16/32/64) to find the System TPS
+# plateau and where latency collapses. Aimed at GPU targets, where vLLM's
+# continuous batching keeps scaling. On CPU / llama.cpp the default server slot
+# count caps useful parallelism, so high concurrency levels just queue (TTFT
+# balloons) — use sweep.yaml (conc 1/2/4/8) for CPU instead.
+load:
+  type: concurrent
+  num_workers: 8
+  worker_max_concurrency: 64
+  stages:
+    - concurrency_level: 1
+      num_requests: 24
+    - concurrency_level: 4
+      num_requests: 48
+    - concurrency_level: 16
+      num_requests: 96
+    - concurrency_level: 32
+      num_requests: 128
+    - concurrency_level: 64
+      num_requests: 192
+api:
+  type: completion
+  streaming: true
+data:
+  type: random
+  input_distribution:  { type: fixed, mean: 512, std_dev: 0, min: 512, max: 512, total_count: 800 }
+  output_distribution: { type: fixed, mean: 128, std_dev: 0, min: 128, max: 128, total_count: 800 }
+server:
+  type: vllm
+  model_name: ${MODEL_NAME}
+  base_url: ${BASE_URL}
+  ignore_eos: true
+tokenizer:
+  pretrained_model_name_or_path: ${TOKENIZER}
+report:
+  request_lifecycle: { summary: true, per_stage: true }
+storage:
+  local_storage:
+    path: ${OUTPUT_DIR}
+    report_file_prefix: ${SCENARIO}

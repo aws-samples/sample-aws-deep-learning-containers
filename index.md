@@ -12,6 +12,7 @@ Step-by-step guides for using AWS Deep Learning Containers.
 - [vLLM on SageMaker](vllm-samples/sagemaker/README.md) - Deploy vLLM on SageMaker endpoints
 - [DeepSeek on EKS](vllm-samples/deepseek/eks/README.md) - Deploy DeepSeek models with vLLM on EKS
 - [Fraud Detection Demo](vllm-samples/deepseek/eks/fraud-detection-demo/README.md) - End-to-end fraud detection with DeepSeek
+- [Graviton vs GPU LLM Benchmark](inference/graviton-vs-gpu-llm-benchmark/README.md) - Benchmark Qwen3-8B on Graviton CPU, x86 CPU, and x86 GPU with vLLM and llama.cpp DLCs
 
 ## Integrations
 

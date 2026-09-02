@@ -1,0 +1,37 @@
+# Sweep: concurrency sweep (conc 1/2/4/8) in one run — single-stream baseline
+# through saturation. Primary scenario for CPU targets (Graviton / x86 CPU),
+# where fixed-concurrency load gives clean per-concurrency System TPS; a fixed QPS
+# would just unboundedly queue. Also valid on GPU.
+load:
+  type: concurrent
+  num_workers: 8
+  worker_max_concurrency: 16
+  stages:                   # ConcurrentLoadStage: concurrency_level + num_requests
+    - concurrency_level: 1  # stage 0 = single-stream latency baseline
+      num_requests: 20
+    - concurrency_level: 2
+      num_requests: 20
+    - concurrency_level: 4
+      num_requests: 20
+    - concurrency_level: 8
+      num_requests: 20
+api:
+  type: completion
+  streaming: true
+data:
+  type: random
+  input_distribution:  { type: fixed, mean: 512, std_dev: 0, min: 512, max: 512, total_count: 400 }
+  output_distribution: { type: fixed, mean: 128, std_dev: 0, min: 128, max: 128, total_count: 400 }
+server:
+  type: vllm
+  model_name: ${MODEL_NAME}
+  base_url: ${BASE_URL}
+  ignore_eos: true
+tokenizer:
+  pretrained_model_name_or_path: ${TOKENIZER}
+report:
+  request_lifecycle: { summary: true, per_stage: true }
+storage:
+  local_storage:
+    path: ${OUTPUT_DIR}
+    report_file_prefix: ${SCENARIO}

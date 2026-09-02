@@ -1,0 +1,29 @@
+# Baseline: single-stream latency. One concurrent request, no queueing — isolates
+# TTFT / ITL / per-token decode. Works on any target (CPU or GPU).
+load:
+  type: concurrent          # fixed-concurrency stages (NOT rate-based)
+  num_workers: 8
+  worker_max_concurrency: 8
+  stages:
+    - concurrency_level: 1
+      num_requests: 20
+api:
+  type: completion          # hits /v1/completions
+  streaming: true           # required for TTFT / ITL / TPOT
+data:
+  type: random
+  input_distribution:  { type: fixed, mean: 512, std_dev: 0, min: 512, max: 512, total_count: 400 }
+  output_distribution: { type: fixed, mean: 128, std_dev: 0, min: 128, max: 128, total_count: 400 }
+server:
+  type: vllm                # works for ANY OpenAI-compatible server, incl. llama.cpp
+  model_name: ${MODEL_NAME} # llama.cpp: unsloth/Qwen3-8B-GGUF:<QUANT>; vLLM: Qwen/Qwen3-8B
+  base_url: ${BASE_URL}
+  ignore_eos: true          # force exactly output_len tokens so token counts aren't noisy
+tokenizer:
+  pretrained_model_name_or_path: ${TOKENIZER}
+report:
+  request_lifecycle: { summary: true, per_stage: true }
+storage:
+  local_storage:
+    path: ${OUTPUT_DIR}
+    report_file_prefix: ${SCENARIO}
