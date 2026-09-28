@@ -218,6 +218,23 @@ on), and GPU capacity.
 
 ## Confirming EFA and RDMA yourself
 
+A healthy deployment: the head and KubeRay operator on the CPU system node, one
+worker per GPU node, each advertising 4 GPUs and 1 EFA interface.
+
+```
+$ kubectl get nodes -L role,node.kubernetes.io/instance-type,topology.kubernetes.io/zone
+NAME                 ROLE         INSTANCE-TYPE   ZONE
+ip-192-168-126-175   system       m7i.xlarge      sa-east-1b
+ip-192-168-70-51     gpu-worker   g6.12xlarge     sa-east-1a
+ip-192-168-92-26     gpu-worker   g6.12xlarge     sa-east-1a
+
+$ kubectl get nodes -l role=gpu-worker \
+    -o custom-columns='NAME:.metadata.name,GPU:.status.allocatable.nvidia\.com/gpu,EFA:.status.allocatable.vpc\.amazonaws\.com/efa'
+NAME               GPU   EFA
+ip-192-168-70-51   4     1
+ip-192-168-92-26   4     1
+```
+
 NCCL runs inside the Ray Train worker actors, which log to Ray's per-worker
 session logs (`/tmp/ray/session_*/logs/`) inside the pod, not the container
 stdout -- so `kubectl logs` won't show these lines; grep the session logs:
@@ -229,16 +246,19 @@ kubectl exec "$WPOD" -n ray-train -c ray-worker -- \
   bash -c 'grep -rhiE "NET/OFI Selected provider|Libfabric|Using network Socket" /tmp/ray/session_*/logs/'
 ```
 
+Captured output:
+
 ```
-NET/OFI Selected provider is efa, fabric is efa (found 1 nics)
-NCCL INFO Using network Libfabric
+NCCL INFO NET/OFI Initializing aws-ofi-nccl 1.20.0
+NCCL INFO NET/OFI Selected provider is efa, fabric is efa (found 1 nics)
+NCCL INFO Channel 00/0 : 7[3] -> 0[0] [receive] via NET/Libfabric/0
 ```
 
-confirms EFA is carrying the collectives. `Using network Socket` or
-`Selected provider is sockets` means it is not -- check that the pod requested
-`vpc.amazonaws.com/efa`, that the EFA device plugin is Ready on that node,
-and that `FI_PROVIDER=efa` reached the container (`kubectl get pod <pod> -o
-jsonpath='{.spec.containers[0].env}'`).
+`7[3] -> 0[0]` is a collective between a rank on one node and a rank on the
+other, riding `NET/Libfabric` over EFA. `Using network Socket` or `Selected
+provider is sockets` would mean it is not -- check that the pod requested
+`vpc.amazonaws.com/efa`, that the EFA device plugin is Ready on that node, and
+that `FI_PROVIDER=efa` reached the container.
 
 ```bash
 # EFA's RDMA capability (network-level; not GPUDirect)
@@ -246,7 +266,16 @@ WPOD=$(kubectl get pod -n ray-train -l ray.io/node-type=worker -o jsonpath='{.it
 kubectl exec "$WPOD" -n ray-train -c ray-worker -- fi_info -p efa
 ```
 
-Look for `FI_RMA` / `FI_EP_RDM` in the capability flags.
+Captured output -- look for `FI_EP_RDM` (network-level RDMA):
+
+```
+provider: efa
+    fabric: efa-direct
+    type: FI_EP_RDM
+provider: efa
+    fabric: efa
+    type: FI_EP_RDM
+```
 
 ## Benchmark: EFA/RDMA vs TCP
 
@@ -273,6 +302,20 @@ first `BENCH_WARMUP_STEPS` discarded). The script verifies from each run's
 worker logs that the intended transport actually engaged before comparing --
 otherwise a silent socket fallback would look like a valid run -- then averages
 the per-rank `steps_per_sec` and prints the speedup.
+
+Example result (2x `g6.12xlarge`, `Qwen/Qwen2.5-1.5B`, `WORLD_SIZE=8`, 20 steps):
+
+```
+=== Results: EFA/RDMA vs TCP ===
+  TCP (sockets, baseline)    0.2513 steps/sec
+  EFA / RDMA                 0.5173 steps/sec
+
+  EFA/RDMA speedup vs TCP: 2.06x
+```
+
+EFA/RDMA roughly doubled throughput here. The multiple grows with model size,
+batch size, and sequence length -- anything that puts more bytes on the
+cross-node collectives -- and on GPUDirect-capable instances (`p4d`/`p5`).
 
 Raw per-rank throughput is in the Ray session logs inside a worker pod:
 
