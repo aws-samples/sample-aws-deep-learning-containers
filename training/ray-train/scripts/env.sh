@@ -49,3 +49,8 @@ export BATCH_SIZE=${BATCH_SIZE:-1}
 export LEARNING_RATE=${LEARNING_RATE:-0.00002}
 # 0 = auto-size Ray Train workers to the cluster's GPU count.
 export NUM_WORKERS=${NUM_WORKERS:-0}
+
+# Benchmark (benchmark_efa_vs_tcp.sh): larger than STEPS for a stable steps/sec;
+# the first BENCH_WARMUP_STEPS are timed but discarded (one-off warm-up costs).
+export BENCH_STEPS=${BENCH_STEPS:-20}
+export BENCH_WARMUP_STEPS=${BENCH_WARMUP_STEPS:-3}

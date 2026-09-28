@@ -5,7 +5,8 @@
 #   bash install_kuberay.sh            # Install operator
 #   bash install_kuberay.sh cleanup    # Uninstall operator
 #
-# Prerequisites: EKS cluster running (deploy_cluster.sh), helm installed.
+# Prerequisites: EKS cluster running (deploy_cluster.sh). helm is
+# auto-installed (via brew or the official script) if missing.
 
 set -eo pipefail
 
@@ -17,7 +18,7 @@ SECONDS=0
 KUBERAY_NAMESPACE="kuberay-operator"
 
 check_prerequisites() {
-    command -v helm &>/dev/null || { print_error "helm not found. Install: https://helm.sh/docs/intro/install/"; exit 1; }
+    ensure_helm
     check_kubectl_prerequisites
     print_success "Prerequisites satisfied (kubectl, helm)"
 }

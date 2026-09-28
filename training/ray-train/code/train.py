@@ -21,6 +21,7 @@ from argparse import ArgumentParser
 from functools import partial
 import logging
 import sys
+import time
 
 import torch
 from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy
@@ -59,6 +60,7 @@ def read_params():
         help="Ungated causal LM. Sized so full fine-tuning needs >1 GPU's worth of memory.",
     )
     parser.add_argument("--steps", type=int, default=5, help="Optimizer steps; this is a correctness smoke test, not a full training run.")
+    parser.add_argument("--warmup_steps", type=int, default=0, help="Leading steps excluded from the steps/sec measurement (warm-up costs).")
     parser.add_argument("--seq_len", type=int, default=128)
     parser.add_argument("--batch_size", type=int, default=1, help="Per-worker batch size. Kept small: the point is the parameter/optimizer memory, not throughput.")
     parser.add_argument("--learning_rate", type=float, default=2e-5)
@@ -80,6 +82,7 @@ def train_func(config):
     seq_len = config["seq_len"]
     batch_size = config["batch_size"]
     steps = config["steps"]
+    warmup_steps = config["warmup_steps"]
     lr = config["learning_rate"]
 
     ctx = ray.train.get_context()
@@ -102,22 +105,39 @@ def train_func(config):
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
     torch.cuda.reset_peak_memory_stats(device)
 
+    timed_steps = 0
+    timed_seconds = 0.0
+
     # Synthetic token ids: the point is exercising real FSDP collectives
-    # across nodes, not achieving a training result, so there is no dataset
-    # to download or stage.
+    # across nodes, not achieving a training result, so there is no dataset.
     for step in range(steps):
         input_ids = torch.randint(0, vocab_size, (batch_size, seq_len), device=device)
+
+        # synchronize() so the timed wall-clock covers the GPU finishing the
+        # cross-node collectives, not just the async launch returning.
+        is_timed = step >= warmup_steps
+        if is_timed:
+            torch.cuda.synchronize(device)
+            step_start = time.perf_counter()
 
         optimizer.zero_grad()
         loss = model(input_ids=input_ids, labels=input_ids).loss
         loss.backward()  # FSDP reduce-scatters gradients across nodes here, over EFA.
         optimizer.step()  # FSDP all-gathers the full parameters across nodes here.
 
+        if is_timed:
+            torch.cuda.synchronize(device)
+            timed_seconds += time.perf_counter() - step_start
+            timed_steps += 1
+
         peak_mem_gb = torch.cuda.max_memory_allocated(device) / 1e9
-        metrics = {"step": step, "loss": loss.item(), "peak_gpu_mem_gb": round(peak_mem_gb, 2)}
-        ray.train.report(metrics)
+        ray.train.report({"step": step, "loss": loss.item(), "peak_gpu_mem_gb": round(peak_mem_gb, 2)})
         logger.info(f"[train] rank={rank} step={step} loss={loss.item():.4f} peak_gpu_mem_gb={peak_mem_gb:.2f}")
 
+    # benchmark_efa_vs_tcp.sh greps steps_per_sec out of this line per run.
+    steps_per_sec = timed_steps / timed_seconds if timed_seconds > 0 else float("nan")
+    ray.train.report({"steps_per_sec": round(steps_per_sec, 4), "timed_steps": timed_steps})
+    logger.info(f"[train] THROUGHPUT rank={rank}/{world_size} timed_steps={timed_steps} steps_per_sec={steps_per_sec:.4f}")
     logger.info(f"[train] SUCCESS: rank={rank}/{world_size} completed {steps} step(s).")
 
 
@@ -152,6 +172,7 @@ if __name__ == "__main__":
             "seq_len": args.seq_len,
             "batch_size": args.batch_size,
             "steps": args.steps,
+            "warmup_steps": args.warmup_steps,
             "learning_rate": args.learning_rate,
         },
         scaling_config=ScalingConfig(num_workers=num_workers, use_gpu=True),

@@ -31,8 +31,10 @@ spec:
               - { containerPort: 8265, name: dashboard }
               - { containerPort: 10001, name: client }
             resources:
-              limits:   { cpu: "4", memory: 16Gi }
-              requests: { cpu: "4", memory: 16Gi }
+              # Sized to fit the m7i.xlarge system node alongside the KubeRay
+              # operator and kube-system pods (~3.9 CPU allocatable).
+              limits:   { cpu: "3", memory: 12Gi }
+              requests: { cpu: "2", memory: 8Gi }
             volumeMounts:
               # Ray writes session logs and object-store spill here.
               - { name: ray-logs, mountPath: /tmp/ray }
@@ -60,9 +62,10 @@ spec:
               image: "${DLC_IMAGE}"
               imagePullPolicy: Always
               env:
-                # eth0 is the pod's interface on EKS; NCCL_DEBUG=INFO is
-                # already set in the image and prints the transport NCCL
-                # picks (see README: Confirming EFA Is in Use).
+                # Makes NCCL log the transport it selects (the EFA check greps
+                # for it); not set by default in this DLC.
+                - { name: NCCL_DEBUG, value: "INFO" }
+                # eth0 is the pod's interface on EKS.
                 - { name: NCCL_SOCKET_IFNAME, value: "eth0" }
                 # Explicit, not left to libfabric's provider auto-selection:
                 # without this, NCCL can silently fall back to sockets and

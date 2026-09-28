@@ -161,6 +161,23 @@ check_credentials() {
     fi
 }
 
+# Ensure helm is on PATH, installing it if missing: Homebrew when available
+# (macOS/Linuxbrew), otherwise the official installer script.
+ensure_helm() {
+    command -v helm &>/dev/null && return 0
+    print_warning "helm not found -- installing it..."
+    if command -v brew &>/dev/null; then
+        brew install helm
+    elif command -v curl &>/dev/null; then
+        curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    else
+        print_error "Cannot auto-install helm (no brew or curl). Install manually: https://helm.sh/docs/intro/install/"
+        exit 1
+    fi
+    command -v helm &>/dev/null || { print_error "helm install ran but helm is still not on PATH."; exit 1; }
+    print_success "helm installed: $(helm version --short 2>/dev/null || echo ok)"
+}
+
 check_kubectl_prerequisites() {
     command -v kubectl &>/dev/null || { print_error "kubectl not found"; exit 1; }
 

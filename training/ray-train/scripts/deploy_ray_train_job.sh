@@ -153,10 +153,17 @@ print_success "Ray Train job completed: $TOTAL_GPUS ranks across $GPU_NODE_COUNT
 
 print_section "Step 7: Confirming EFA (Not TCP) Carried the Job"
 # A job over TCP looks identical to a healthy one in 'kubectl get pods', so
-# this has to be checked in the logs. Both the positive signal and the
-# absence of the fallback signal matter -- a job can complete and print
-# success while quietly using sockets.
-WORKER_LOGS=$(kubectl logs -n "$NAMESPACE" -l "ray.io/cluster=${RAY_CLUSTER_NAME},ray.io/node-type=worker" -c ray-worker --tail=-1 2>/dev/null || true)
+# this has to be checked in NCCL's logs. NCCL runs inside the Ray Train worker
+# actors, which write to Ray's per-worker session logs (/tmp/ray/session_*/
+# logs/) -- not to the pod's container stdout -- so grep there, on every
+# worker pod. Both the positive signal and the absence of the socket fallback
+# matter: a job can complete and print success while quietly using sockets.
+WORKER_LOGS=""
+for wpod in $(kubectl get pods -n "$NAMESPACE" -l "ray.io/cluster=${RAY_CLUSTER_NAME},ray.io/node-type=worker" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+    WORKER_LOGS+=$(kubectl exec "$wpod" -n "$NAMESPACE" -c ray-worker -- \
+        bash -c 'grep -rhiE "NET/OFI Selected provider|Using network Socket|Selected provider is sockets" /tmp/ray/session_*/logs/ 2>/dev/null' 2>/dev/null || true)
+    WORKER_LOGS+=$'\n'
+done
 EFA_LOG=$(echo "$WORKER_LOGS" | grep -iE "NET/OFI Selected provider is efa" || true)
 SOCKET_FALLBACK=$(echo "$WORKER_LOGS" | grep -iE "Using network Socket|Selected provider is sockets" || true)
 

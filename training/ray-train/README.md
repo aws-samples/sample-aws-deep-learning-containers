@@ -66,7 +66,7 @@ Install the following tools before running any scripts:
 - [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html) with credentials configured
 - [eksctl](https://eksctl.io/installation/)
 - [kubectl](https://kubernetes.io/docs/tasks/tools/)
-- [helm](https://helm.sh/docs/intro/install/) to install the KubeRay operator and GPU device plugins
+- [helm](https://helm.sh/docs/intro/install/) to install the KubeRay operator and GPU device plugins (auto-installed via `brew` or the official script if missing)
 - [envsubst](https://www.gnu.org/software/gettext/) is used to render the manifest
 
 Verify that your AWS credentials are active, and check `g6.12xlarge` capacity
@@ -117,6 +117,8 @@ variable by exporting it before running a script.
 | BATCH_SIZE | 1 | Per-worker batch size |
 | LEARNING_RATE | 0.00002 | Optimizer learning rate |
 | NUM_WORKERS | 0 | Ray Train workers; 0 = auto-size to the cluster's GPU count (8) |
+| BENCH_STEPS | 20 | Steps per run for `benchmark_efa_vs_tcp.sh` (larger than STEPS for a stable steps/sec) |
+| BENCH_WARMUP_STEPS | 3 | Leading steps timed but excluded from the benchmark's steps/sec (warm-up costs) |
 
 ## Step-by-step deployment
 
@@ -216,9 +218,15 @@ on), and GPU capacity.
 
 ## Confirming EFA and RDMA yourself
 
+NCCL runs inside the Ray Train worker actors, which log to Ray's per-worker
+session logs (`/tmp/ray/session_*/logs/`) inside the pod, not the container
+stdout -- so `kubectl logs` won't show these lines; grep the session logs:
+
 ```bash
 # NCCL's transport choice
-kubectl logs -n ray-train -l ray.io/node-type=worker -c ray-worker --tail=-1 | grep -iE "NET/OFI|Libfabric|Socket"
+WPOD=$(kubectl get pod -n ray-train -l ray.io/node-type=worker -o jsonpath='{.items[0].metadata.name}')
+kubectl exec "$WPOD" -n ray-train -c ray-worker -- \
+  bash -c 'grep -rhiE "NET/OFI Selected provider|Libfabric|Using network Socket" /tmp/ray/session_*/logs/'
 ```
 
 ```
@@ -239,6 +247,40 @@ kubectl exec "$WPOD" -n ray-train -c ray-worker -- fi_info -p efa
 ```
 
 Look for `FI_RMA` / `FI_EP_RDM` in the capability flags.
+
+## Benchmark: EFA/RDMA vs TCP
+
+The checks above confirm EFA *carries* the job; this measures how much faster
+that makes it. Once the RayCluster is running (after `deploy_ray_train_job.sh`
+has run at least once), from `scripts/`:
+
+```bash
+./benchmark_efa_vs_tcp.sh
+```
+
+It runs the same FSDP job twice on the same cluster, changing only the NCCL
+transport for the cross-node collectives:
+
+| Run | Transport env | Collectives ride |
+| --- | --- | --- |
+| EFA | `FI_PROVIDER=efa`, `NCCL_NET_PLUGIN=ofi` | EFA / RDMA |
+| TCP | `NCCL_NET=Socket`, `FI_PROVIDER=tcp` | TCP over `eth0` |
+
+Same nodes, same model, same steps, so the steps/sec difference is the
+transport. FSDP's cross-node all-gather/reduce-scatter is exactly the traffic
+EFA accelerates, so the gap shows even on a short run (`BENCH_STEPS` steps, the
+first `BENCH_WARMUP_STEPS` discarded). The script verifies from each run's
+worker logs that the intended transport actually engaged before comparing --
+otherwise a silent socket fallback would look like a valid run -- then averages
+the per-rank `steps_per_sec` and prints the speedup.
+
+Raw per-rank throughput is in the Ray session logs inside a worker pod:
+
+```bash
+WPOD=$(kubectl get pod -n ray-train -l ray.io/node-type=worker -o jsonpath='{.items[0].metadata.name}')
+kubectl exec "$WPOD" -n ray-train -c ray-worker -- \
+  bash -c 'grep -rh "\[train\] THROUGHPUT" /tmp/ray/session_*/logs/'
+```
 
 ## Beyond this sample
 
@@ -288,6 +330,7 @@ sample). Tear down when not actively working with it.
 | Install KubeRay | `./install_kuberay.sh` |
 | Deploy RayCluster + run training job | `./deploy_ray_train_job.sh` |
 | Check status | `./deploy_ray_train_job.sh status` |
+| Benchmark EFA/RDMA vs TCP | `./benchmark_efa_vs_tcp.sh` |
 | Delete RayCluster | `./delete_ray_train_job.sh` |
 | Uninstall KubeRay | `./install_kuberay.sh cleanup` |
 | Uninstall GPU device plugins | `./install_gpu_plugins.sh cleanup` |
