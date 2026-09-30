@@ -1,0 +1,15 @@
+model: unsloth/Qwen3-8B-GGUF:BF16
+# Known chart issue 2 (see README): chart appends --tensor-parallel-size 1 for accelerator gpu; full command here, trailing '#' comments out the rest.
+llamaCpp:
+  command: "llama-server -hf unsloth/Qwen3-8B-GGUF:BF16 --port 8000 --host 0.0.0.0 --ctx-size 4096 --jinja -ngl 99 #"
+inference:
+  serviceName: llamacpp-gpu-bf16
+  serviceNamespace: benchmarking
+  accelerator: gpu
+  framework: llama-cpp
+  modelServer:
+    image:
+      repository: public.ecr.aws/deep-learning-containers/llama-cpp
+      tag: server-cuda-v1
+    deployment:
+      instanceType: g6e.xlarge

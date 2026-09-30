@@ -1,0 +1,18 @@
+model: Qwen/Qwen3-8B
+# Known chart issue 1 (see README): quote every numeric modelParameters value.
+modelParameters:
+  maxModelLen: "4096"
+  gpuMemoryUtilization: "0.9"
+inference:
+  serviceName: vllm-gpu-bf16
+  serviceNamespace: benchmarking
+  accelerator: gpu
+  framework: vllm
+  modelServer:
+    image:
+      repository: public.ecr.aws/deep-learning-containers/vllm
+      tag: server-cuda-v2
+    deployment:
+      startupProbe: {failureThreshold: 120, periodSeconds: 10, httpGet: {path: /health, port: 8000}}
+      tolerations: [{key: bench, operator: Equal, value: gpu, effect: NoSchedule}]
+      instanceType: g6e.xlarge
