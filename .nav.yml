@@ -6,6 +6,7 @@ nav:
   - Inference:
     - vLLM on SageMaker: vllm-samples/sagemaker/README.md
     - WhisperX on SageMaker: inference/whisperx/README.md
+    - Graviton vs GPU on EKS with inference-charts: inference/graviton-vs-gpu-eks-inference-charts/README.md
     - DeepSeek on EKS: vllm-samples/deepseek/eks/README.md
     - Fraud Detection Demo: vllm-samples/deepseek/eks/fraud-detection-demo/README.md
   - Integrations:

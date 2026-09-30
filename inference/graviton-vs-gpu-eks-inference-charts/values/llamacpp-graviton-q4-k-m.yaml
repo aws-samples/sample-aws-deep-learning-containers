@@ -1,0 +1,20 @@
+model: unsloth/Qwen3-8B-GGUF:Q4_K_M
+# Known chart issue 1 (see README): quote every numeric modelParameters value.
+modelParameters:
+  ctxSize: "4096"
+  jinja: true
+inference:
+  serviceName: llamacpp-grv-q4-k-m
+  serviceNamespace: benchmarking
+  accelerator: graviton
+  framework: llama-cpp
+  modelServer:
+    image:
+      repository: public.ecr.aws/deep-learning-containers/llama-cpp-arm64
+      tag: server-cpu-v1
+    deployment:
+      resources:
+        graviton:
+          requests: {cpu: "15", memory: 48Gi}
+          # Known chart issue 4 (see README): null the default cpu limit so a cpu request of 15 is valid.
+          limits: {cpu: null, memory: 58Gi}
