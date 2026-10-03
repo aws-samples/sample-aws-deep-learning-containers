@@ -1,3 +1,6 @@
 .gem-config
 .kiro/*
+misc/
 .DS_Store
+# Per-machine Region/AZ chosen by ray-train/scripts/deploy_all.sh
+.placement.env

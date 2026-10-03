@@ -64,9 +64,7 @@ echo "  Job:          FSDP fine-tune of $MODEL_ID, ${STEPS} step(s)"
 echo "  Workers:      $GPU_NODE_COUNT x $GPU_NODE_TYPE (${GPUS_PER_NODE} GPU + 1 EFA interface each)"
 echo
 
-read -p "Proceed? (y/N): " -n 1 -r
-echo
-[[ $REPLY =~ ^[Yy]$ ]] || { echo "Cancelled."; exit 0; }
+confirm
 
 check_prerequisites
 

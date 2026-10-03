@@ -215,9 +215,7 @@ echo "  System Nodes: ${SYSTEM_NODE_COUNT} x ${SYSTEM_NODE_TYPE}"
 echo "  AWS Auth:     ${AWS_PROFILE:-environment credentials}"
 echo
 
-read -p "Proceed? (y/N): " -n 1 -r
-echo
-[[ $REPLY =~ ^[Yy]$ ]] || { echo "Cancelled."; exit 0; }
+confirm
 
 check_prerequisites
 

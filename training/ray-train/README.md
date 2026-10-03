@@ -51,6 +51,8 @@ achieving a training result, so there is no dataset to stage.
 
 ## Architecture
 
+![Multi-node Ray Train on EKS -- architecture](images/architecture.png)
+
 ```
 EKS cluster
 ├── system node group (m7i.xlarge x1)    -- KubeRay operator + Ray head (CPU only)
@@ -89,7 +91,13 @@ ray-train/
 ## Configuration
 
 All scripts share a single configuration file: `scripts/env.sh`. Override any
-variable by exporting it before running a script.
+variable by exporting it before running a script. `env.sh` also loads
+`scripts/.placement.env` if it exists -- the `REGION`/`GPU_AZ` that
+`deploy_all.sh` last chose -- so its values replace the `REGION` default
+below; anything you export still wins. Delete that file to go back to the
+defaults. Set the Region with `REGION`, not `AWS_REGION`: `env.sh` sets
+`AWS_REGION`/`AWS_DEFAULT_REGION` from `REGION`, overriding whatever your
+shell or AWS CLI profile has.
 
 | Variable | Default | Description |
 | --- | --- | --- |
@@ -103,7 +111,8 @@ variable by exporting it before running a script.
 | GPU_NODE_COUNT | 2 | Number of GPU worker nodes |
 | GPUS_PER_NODE | 4 | GPUs per `GPU_NODE_TYPE` -- must match the instance type if you change it |
 | GPU_NODEGROUP_NAME | gpu-workers | Name of the GPU node group |
-| GPU_AZ | _(auto)_ | AZ for the GPU node group; auto-discovered when empty |
+| GPU_AZ | _(auto)_ | AZ for the GPU node group. Auto-picked from AZs that both offer `GPU_NODE_TYPE` *and* already have a cluster private subnet; if set explicitly, validated against that same intersection and rejected with a reason otherwise |
+| ASSUME_YES | _(empty)_ | Set to `1` to skip the "Proceed? (y/N)" prompt in `deploy_cluster.sh`/`deploy_node_group.sh`. Set by `deploy_all.sh` (and by `find_gpu_capacity.sh` when you accept its deploy offer) after their own single prompt -- not something you normally set by hand |
 | DLC_IMAGE | public.ecr.aws/deep-learning-containers/ray:train-ml-cuda | Ray Train DLC image |
 | KUBERAY_VERSION | 1.4.0 | KubeRay operator version |
 | RAY_VERSION | 2.58.0 | Ray version (must match the image) |
@@ -119,6 +128,48 @@ variable by exporting it before running a script.
 | NUM_WORKERS | 0 | Ray Train workers; 0 = auto-size to the cluster's GPU count (8) |
 | BENCH_STEPS | 20 | Steps per run for `benchmark_efa_vs_tcp.sh` (larger than STEPS for a stable steps/sec) |
 | BENCH_WARMUP_STEPS | 3 | Leading steps timed but excluded from the benchmark's steps/sec (warm-up costs) |
+
+## Quickstart: build the infrastructure, then run the job
+
+Building the infrastructure and running the training job are separate steps.
+Infrastructure is slow, billed, and built once; the job is quick and you
+re-run it as often as you like, so a training failure never sends you back
+through cluster setup.
+
+**1. Build the infrastructure** (cluster, GPU node group, device plugins,
+KubeRay) with one command:
+
+```bash
+cd scripts
+./deploy_all.sh                                  # search REGION from env.sh
+./deploy_all.sh -r "us-east-2 us-east-1 us-west-2"
+./deploy_all.sh --plan                           # show what it would do; creates nothing
+```
+
+`g6.12xlarge` capacity shifts between Regions/AZs day to day, so
+`deploy_all.sh` first runs `find_gpu_capacity.sh --probe` to find where the
+two nodes can actually launch (see Step 2 below), then runs
+`deploy_cluster.sh`, `deploy_node_group.sh`, `install_gpu_plugins.sh`, and
+`install_kuberay.sh` in that Region. If the node group can't launch in the
+best AZ, it removes it and tries the next candidate AZ. It asks once
+(`Proceed with the whole chain without further prompts? (y/N)`; `-y` skips
+even that) and stops after KubeRay. The chosen Region/AZ is saved to
+`scripts/.placement.env`, which every other script reads, so later commands
+target the same place without re-exporting anything. Every step is
+idempotent: re-running after a failure picks up where it stopped, and an
+already-`ACTIVE` GPU node group is reused rather than searched for again.
+
+**2. Run the training job** (Step 5 below), as many times as you like:
+
+```bash
+./deploy_ray_train_job.sh
+./benchmark_efa_vs_tcp.sh                        # optional: EFA vs TCP throughput
+```
+
+To do both in one go, pass `--train` (the job too) or `--benchmark` (the job
+and the benchmark) to `deploy_all.sh`.
+
+Run each step by hand instead with the step-by-step section below.
 
 ## Step-by-step deployment
 
@@ -142,8 +193,38 @@ group always has a usable subnet. Idempotent: safe to re-run if interrupted.
 
 ### Step 2: Add GPU worker nodes
 
+First, find an AZ where the two nodes can actually launch:
+
 ```bash
-./deploy_node_group.sh
+./find_gpu_capacity.sh                         # REGION from env.sh
+./find_gpu_capacity.sh -r "us-east-2 us-east-1 us-west-2"
+./find_gpu_capacity.sh -r us-east-2 --probe    # confirm capacity (see below)
+```
+
+An instance type being *offered* in an AZ doesn't mean you can launch it
+there. This script checks the three things that each fail independently:
+the type is offered in the AZ, your On-Demand vCPU quota for the family has
+room for `GPU_NODE_COUNT` nodes (2 x g6.12xlarge = 96 G/VT vCPUs), and the
+cluster has a private subnet in that AZ. No read-only API reports
+On-Demand capacity, so the table also shows the Spot placement score as a
+rough signal. `--probe` gives the definitive answer by creating an
+On-Demand Capacity Reservation for the nodes in each candidate AZ and
+cancelling it immediately (billed at the On-Demand rate for the seconds it
+exists). It prints the `export REGION=... GPU_AZ=...` to use and, for any
+Region marked `SHORT`, the `service-quotas` command to request more.
+
+When run on its own, it then offers once to build the infrastructure in the
+recommended Region/AZ (`deploy_cluster.sh` through `install_kuberay.sh`, the
+same chain as `deploy_all.sh` but without its AZ fallback or saved
+placement). Like `deploy_all.sh`, it stops after KubeRay. It skips the offer,
+and tells you why, if the cluster already exists without a subnet in that AZ;
+see **AZ/subnet resolution** below.
+
+Then create the node group:
+
+```bash
+./deploy_node_group.sh                         # GPU_AZ auto-picked and cluster-checked
+GPU_AZ=us-east-2b ./deploy_node_group.sh       # or pin one explicitly
 ```
 
 Creates the GPU node group: 2x `g6.12xlarge` with EFA enabled, pinned to a
@@ -154,6 +235,20 @@ Feature Discovery. Runs in private subnets with no public IPs. `AmiType` is
 resolved automatically to the accelerated, GPU-capable variant of
 `NODE_AMI_FAMILY` -- the driver ships with that AMI, but is not yet advertised
 to kubelet (that's the device plugin's job, next step). 3-5 minutes.
+
+**AZ/subnet resolution is cluster-aware, not just capacity-aware.**
+`GPU_NODE_TYPE` being *offered* in an AZ doesn't mean the cluster has a
+subnet there -- capacity can shift to an AZ the cluster's VPC was never given
+a subnet in (e.g. the cluster predates that AZ having capacity, or was
+created with a different AZ set). `resolve_gpu_az` in `scripts/_lib.sh`
+intersects "AZs offering `GPU_NODE_TYPE`" with "AZs the cluster actually has
+a private subnet in" and picks (or validates `GPU_AZ` against) that
+intersection only; `deploy_node_group.sh` then resolves the AZ to the
+cluster's exact subnet id and passes that to eksctl directly (`subnets:`, not
+`availabilityZones:`), so the node group cannot land in a subnet other than
+the cluster's own. If the intersection is empty, the script fails immediately
+with the mismatched AZ lists and the fix, instead of letting eksctl discover
+it the slow way as a stuck CloudFormation stack.
 
 ### Step 3: Install the GPU device plugins
 
@@ -195,9 +290,18 @@ schedule), waits for the head pod to be Ready and both worker pods to be
 Running, copies `code/` onto the head pod, then runs:
 
 ```bash
-ray job submit --address http://localhost:8265 --working-dir /tmp/ray-train-code -- \
-    python3 train.py --model_id Qwen/Qwen2.5-1.5B
+kubectl exec <head-pod> -n ray-train -c ray-head -- \
+    ray job submit --address http://localhost:8265 --working-dir /tmp/ray-train-code \
+    --runtime-env-json '{"pip": ["transformers==4.46.3"]}' -- \
+    python3 train.py --model_id Qwen/Qwen2.5-1.5B --steps 5 --seq_len 128 \
+        --batch_size 1 --learning_rate 0.00002 --num_workers 0
 ```
+
+The job is submitted from inside the head pod (port 8265 is never exposed
+outside the cluster). Each Ray Train worker downloads the model weights from
+Hugging Face itself on first load, out through the NAT Gateway; there is no
+S3 staging step, and the 4 workers in a pod share one download cache, which
+is lost when the pod is replaced.
 
 `ray job submit` blocks and streams the job's logs; the script exits non-zero
 if the job fails. After the job completes it checks the worker logs for the
@@ -337,7 +441,8 @@ kubectl exec "$WPOD" -n ray-train -c ray-worker -- \
   for lower, more consistent latency -- worth adding if you're chasing
   bandwidth, not required for the correctness criteria above.
 - **Shared storage for real training.** `code/train.py` has no dataset or
-  checkpoint to persist, so there's no FSx/S3 dependency here. A real
+  checkpoint to persist, and pulls the model straight from Hugging Face, so
+  there's no FSx/S3 dependency here. A real
   training job that stages a dataset/model or checkpoints across worker
   restarts needs shared storage such as FSx for Lustre or an `s3://` URI --
   see the [Ray Train DLC EKS guide](https://aws.github.io/deep-learning-containers/ray-train/deployment/eks/)
@@ -357,6 +462,10 @@ cd scripts
 ./delete_cluster.sh              # Delete the EKS cluster
 ```
 
+These target the Region saved in `scripts/.placement.env` (if `deploy_all.sh`
+created one). Delete that file afterwards if your next deployment should
+start from the `env.sh` defaults.
+
 ## Cost
 
 Running cost is roughly **$9.50/hr** while the GPU node group is up: 2x
@@ -367,7 +476,10 @@ sample). Tear down when not actively working with it.
 
 | Action | Command |
 | --- | --- |
+| Build all infrastructure (stops after KubeRay) | `./deploy_all.sh [-r "regions"] [--plan] [-y]` |
+| Build infrastructure + run the job (+ benchmark) | `./deploy_all.sh --train` / `./deploy_all.sh --benchmark` |
 | Deploy cluster | `./deploy_cluster.sh` |
+| Find an AZ with GPU quota/capacity | `./find_gpu_capacity.sh [-r "regions"] [--probe]` |
 | Deploy GPU nodes | `./deploy_node_group.sh` |
 | Install GPU device plugins | `./install_gpu_plugins.sh` |
 | Install KubeRay | `./install_kuberay.sh` |

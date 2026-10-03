@@ -2,6 +2,13 @@
 # deploy_node_group.sh — Create the GPU node group for Ray Train workers.
 # Idempotent: safe to re-run if interrupted. To delete, use delete_node_group.sh.
 #
+# GPU_AZ is auto-picked from the intersection of "AZs that offer
+# $GPU_NODE_TYPE" and "AZs the cluster already has a private subnet in" --
+# the node group always lands in the SAME subnet the cluster (and system
+# node group) already uses. If you set GPU_AZ explicitly, it is validated
+# against that same intersection and rejected with a clear reason otherwise
+# (e.g. the type isn't offered there, or the cluster has no subnet there).
+#
 # Usage: bash deploy_node_group.sh
 # Override: GPU_NODE_TYPE=g6.8xlarge GPUS_PER_NODE=1 GPU_AZ=us-east-1b bash deploy_node_group.sh
 
@@ -47,22 +54,44 @@ echo "  EFA:        enabled"
 echo "  AZ:         ${GPU_AZ:-auto-discover}"
 echo
 
-read -p "Proceed? (y/N): " -n 1 -r
-echo
-[[ $REPLY =~ ^[Yy]$ ]] || { echo "Cancelled."; exit 0; }
+confirm
 
 check_prerequisites
 
+AZ_WAS_SET=${GPU_AZ:+yes}
 GPU_AZ=$(resolve_gpu_az)
-print_success "GPU AZ: $GPU_AZ"
+# Resolved from the cluster's own VPC, not re-derived from the AZ name --
+# this is what guarantees the node group lands in the same subnet the
+# cluster (and system node group) already uses, never a different one.
+GPU_SUBNET=$(resolve_gpu_subnet "$GPU_AZ")
+print_success "GPU AZ: $GPU_AZ (cluster subnet $GPU_SUBNET)"
+if [ -z "$AZ_WAS_SET" ]; then
+    # resolve_gpu_az only knows where the type is OFFERED and where the
+    # cluster has a subnet, not where there is quota or capacity right now;
+    # find_gpu_capacity.sh checks both of those too.
+    print_warning "GPU_AZ was auto-picked (and cross-checked against the cluster's own subnets). If launches fail with InsufficientInstanceCapacity, run 'bash find_gpu_capacity.sh' and re-run with GPU_AZ=<az>."
+fi
 
 print_section "Checking for Existing GPU Node Group"
 NODEGROUP_STATUS=$(get_nodegroup_status "$GPU_NODEGROUP_NAME")
 
 case "$NODEGROUP_STATUS" in
     NOT_FOUND)
+        # A previous attempt that failed (e.g. no capacity in its AZ) leaves
+        # eksctl's node group stack in ROLLBACK_COMPLETE. It holds no resources,
+        # but eksctl refuses to create a stack with the same name, so remove it.
+        NG_STACK="eksctl-${CLUSTER_NAME}-nodegroup-${GPU_NODEGROUP_NAME}"
+        NG_STACK_STATUS=$(get_cf_stack_status "$NG_STACK")
+        if [ "$NG_STACK_STATUS" = "ROLLBACK_COMPLETE" ]; then
+            print_warning "Removing failed stack $NG_STACK (ROLLBACK_COMPLETE, no resources) left by a previous attempt..."
+            disable_eksctl_stack_protection "$NG_STACK"
+            aws cloudformation delete-stack --stack-name "$NG_STACK" --region "$REGION"
+            aws cloudformation wait stack-delete-complete --stack-name "$NG_STACK" --region "$REGION"
+            print_success "Stale stack removed"
+        fi
+
         print_section "Creating GPU Node Group"
-        echo "Creating ${GPU_NODE_COUNT}x ${GPU_NODE_TYPE} node(s) in ${GPU_AZ}..."
+        echo "Creating ${GPU_NODE_COUNT}x ${GPU_NODE_TYPE} node(s) in ${GPU_AZ} (subnet ${GPU_SUBNET})..."
         wait_for_no_active_update
 
         # efaEnabled has no eksctl CLI flag, so this needs a config file.
@@ -81,7 +110,10 @@ managedNodeGroups:
     desiredCapacity: ${GPU_NODE_COUNT}
     minSize: ${GPU_NODE_COUNT}
     maxSize: ${GPU_NODE_COUNT}
-    availabilityZones: ["${GPU_AZ}"]
+    # An explicit subnet id, not an AZ name -- eksctl would otherwise
+    # re-resolve the AZ to a subnet itself, which is the exact step that let
+    # a node group drift to a different subnet than the cluster's.
+    subnets: ["${GPU_SUBNET}"]
     privateNetworking: true
     efaEnabled: true
     amiFamily: ${NODE_AMI_FAMILY}

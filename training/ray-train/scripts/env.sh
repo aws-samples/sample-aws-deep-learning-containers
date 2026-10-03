@@ -2,6 +2,12 @@
 # env.sh - Single source of truth for all shared variables. No side effects.
 # Usage: source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 
+# REGION / GPU_AZ chosen by deploy_all.sh, so every script afterwards targets
+# the same place. Anything you export yourself still takes precedence.
+_PLACEMENT="$(dirname "${BASH_SOURCE[0]}")/.placement.env"
+[ -f "$_PLACEMENT" ] && source "$_PLACEMENT"
+unset _PLACEMENT
+
 export CLUSTER_NAME=${CLUSTER_NAME:-"eks-cluster"}
 export REGION=${REGION:-"us-east-2"}
 export K8S_VERSION=${K8S_VERSION:-"1.36"}
@@ -11,6 +17,11 @@ export NODE_AMI_FAMILY=${NODE_AMI_FAMILY:-"AmazonLinux2023"}
 export AWS_REGION="$REGION"
 export AWS_DEFAULT_REGION="$REGION"
 export NAMESPACE=${NAMESPACE:-"ray-train"}
+
+# Skips the "Proceed? (y/N)" prompt in deploy_cluster.sh/deploy_node_group.sh
+# when set to 1. find_gpu_capacity.sh sets this itself after its own prompt,
+# so chaining into those scripts doesn't ask the same question twice.
+export ASSUME_YES=${ASSUME_YES:-""}
 
 export SYSTEM_NODE_TYPE=${SYSTEM_NODE_TYPE:-"m7i.xlarge"}
 export SYSTEM_NODE_COUNT=${SYSTEM_NODE_COUNT:-1}
