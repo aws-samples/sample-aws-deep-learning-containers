@@ -1,0 +1,2 @@
+# Per-machine Region/AZ chosen by scripts/deploy_all.sh
+scripts/.placement.env
