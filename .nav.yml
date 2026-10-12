@@ -2,6 +2,7 @@ nav:
   - index.md
   - Training:
     - EKS Training: training/eks/README.md
+    - Ray Train Multi-Node on EKS: training/ray-train/README.md
     - Distributed Fraud Detection (XGBoost): xgboost/fraud-detection-distributed/README.md
   - Inference:
     - vLLM on SageMaker: vllm-samples/sagemaker/README.md
