@@ -1,0 +1,25 @@
+load:
+  type: concurrent
+  num_workers: 8
+  worker_max_concurrency: 16
+  stages:
+    - {concurrency_level: 1, num_requests: 2}
+    - {concurrency_level: 4, num_requests: 4}
+api:
+  type: completion
+  streaming: true
+data:
+  type: random
+  input_distribution: {type: fixed, mean: 512, std_dev: 0, min: 512, max: 512, total_count: 1200}
+  output_distribution: {type: fixed, mean: 128, std_dev: 0, min: 128, max: 128, total_count: 1200}
+server:
+  type: vllm
+  model_name: MODEL
+  base_url: URL
+  ignore_eos: true
+tokenizer:
+  pretrained_model_name_or_path: Qwen/Qwen3-8B
+report:
+  request_lifecycle: {summary: true, per_stage: true}
+storage:
+  local_storage: {path: /tmp/reports, report_file_prefix: sweep}

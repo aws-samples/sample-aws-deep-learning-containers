@@ -11,6 +11,7 @@ Step-by-step guides for using AWS Deep Learning Containers.
 
 - [vLLM on SageMaker](vllm-samples/sagemaker/README.md) - Deploy vLLM on SageMaker endpoints
 - [WhisperX on SageMaker](inference/whisperx/README.md) - Real-time speech-to-text with word-level timestamps and speaker diarization
+- [Graviton vs GPU on EKS with inference-charts](inference/graviton-vs-gpu-eks-inference-charts/README.md) - Benchmark vLLM and llama.cpp on Graviton CPU and x86 GPU nodes with ai-on-eks-charts
 - [DeepSeek on EKS](vllm-samples/deepseek/eks/README.md) - Deploy DeepSeek models with vLLM on EKS
 - [Fraud Detection Demo](vllm-samples/deepseek/eks/fraud-detection-demo/README.md) - End-to-end fraud detection with DeepSeek
 

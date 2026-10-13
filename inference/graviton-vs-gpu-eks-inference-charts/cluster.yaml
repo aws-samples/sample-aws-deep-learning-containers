@@ -1,0 +1,57 @@
+# eksctl cluster for the Graviton vs GPU inference-charts benchmark.
+# Render the placeholders and create the cluster with:
+#   envsubst < cluster.yaml | eksctl create cluster -f -
+#
+# Node layout (one engine per bench node at a time):
+#   graviton  m8g.4xlarge  taint bench=graviton:NoSchedule  model server (arm64 CPU)
+#   gpu       g6e.xlarge   taint bench=gpu:NoSchedule       model server (1x NVIDIA L40S)
+#   system    m7i.xlarge   untainted                        cluster add-ons, inference-perf job, curl pod
+# All nodegroups are pinned to ${AWS_AZ} so client and server share a zone, and run in
+# private subnets (outbound traffic for image and model pulls goes through the NAT gateway).
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: ${CLUSTER_NAME}
+  region: ${AWS_REGION}
+  version: "${EKS_VERSION}"
+
+# EKS needs at least two AZs for the control plane subnets; nodes only use ${AWS_AZ}.
+availabilityZones: ["${AWS_AZ}", "${AWS_AZ_2}"]
+
+managedNodeGroups:
+  - name: graviton
+    instanceType: m8g.4xlarge
+    amiFamily: AmazonLinux2023
+    availabilityZones: ["${AWS_AZ}"]
+    privateNetworking: true
+    desiredCapacity: 1
+    minSize: 0
+    maxSize: 1
+    volumeSize: 200
+    labels: {bench: graviton}
+    taints:
+      - {key: bench, value: graviton, effect: NoSchedule}
+
+  - name: gpu
+    instanceType: g6e.xlarge
+    amiFamily: AmazonLinux2023
+    availabilityZones: ["${AWS_AZ}"]
+    privateNetworking: true
+    desiredCapacity: 1
+    minSize: 0
+    maxSize: 1
+    volumeSize: 200
+    labels: {bench: gpu}
+    taints:
+      - {key: bench, value: gpu, effect: NoSchedule}
+
+  - name: system
+    instanceType: m7i.xlarge
+    amiFamily: AmazonLinux2023
+    availabilityZones: ["${AWS_AZ}"]
+    privateNetworking: true
+    desiredCapacity: 1
+    minSize: 1
+    maxSize: 1
+    volumeSize: 50

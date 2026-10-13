@@ -1,0 +1,23 @@
+model: Qwen/Qwen3-8B
+# Known chart issue 1 (see README): quote every numeric modelParameters value.
+modelParameters:
+  maxModelLen: "4096"
+vllm:
+  cpuKvCacheSpace: "20"
+inference:
+  serviceName: vllm-grv-bf16
+  serviceNamespace: benchmarking
+  accelerator: graviton
+  framework: vllm
+  modelServer:
+    image:
+      repository: public.ecr.aws/deep-learning-containers/vllm-arm64
+      tag: server-cpu-v1
+    deployment:
+      startupProbe: {failureThreshold: 120, periodSeconds: 10, httpGet: {path: /health, port: 8000}}
+      tolerations: [{key: bench, operator: Equal, value: graviton, effect: NoSchedule}]
+      resources:
+        graviton:
+          requests: {cpu: "15", memory: 48Gi}
+          # Known chart issue 4 (see README): null the default cpu limit so a cpu request of 15 is valid.
+          limits: {cpu: null, memory: 58Gi}
