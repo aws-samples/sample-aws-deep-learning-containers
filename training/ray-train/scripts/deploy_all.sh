@@ -11,7 +11,6 @@
 #                            next AZ is tried
 #   install_gpu_plugins.sh, install_kuberay.sh
 #   deploy_ray_train_job.sh  (only with --train)
-#   benchmark_efa_vs_tcp.sh  (only with --benchmark, which implies --train)
 #
 # Each step is the same idempotent script you can run by hand; this sequences
 # them, passes REGION/GPU_AZ along, and answers their prompts after asking you
@@ -21,7 +20,6 @@
 #   bash deploy_all.sh                          # search REGION from env.sh, build, stop after KubeRay
 #   bash deploy_all.sh -r "us-east-2 us-east-1"  # search several Regions
 #   bash deploy_all.sh --train                  # also run the training job
-#   bash deploy_all.sh --benchmark              # training job + EFA vs TCP benchmark
 #   bash deploy_all.sh --plan                   # show what it would do; read-only
 #   bash deploy_all.sh --no-probe               # rank AZs on quota only (see below)
 #   bash deploy_all.sh -y                       # don't ask at all
@@ -33,7 +31,7 @@
 # billed at the On-Demand rate for the seconds it exists). --no-probe skips it.
 #
 # The chosen REGION/GPU_AZ are saved to scripts/.placement.env, which env.sh
-# loads, so later runs of benchmark_efa_vs_tcp.sh or the delete_*.sh scripts
+# loads, so later runs of deploy_ray_train_job.sh or the delete_*.sh scripts
 # target the same Region without re-exporting anything.
 
 # Captured before env.sh can fill them from saved state or defaults, so an
@@ -51,13 +49,12 @@ PLACEMENT_FILE="$SCRIPT_DIR/.placement.env"
 REGIONS="$REGION"
 ALL_REGIONS=false
 PROBE=auto
-BENCH=false
 TRAIN=false
 YES=false
 PLAN=false
 AZ_LIST=""
 
-usage() { sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -66,7 +63,6 @@ while [ $# -gt 0 ]; do
         --azs) AZ_LIST="$(echo "$2" | tr ',' ' ')"; shift 2 ;;
         --probe) PROBE=true; shift ;;
         --no-probe) PROBE=false; shift ;;
-        --benchmark) BENCH=true; shift ;;
         --train) TRAIN=true; shift ;;
         --plan) PLAN=true; shift ;;
         -y|--yes) YES=true; shift ;;
@@ -79,8 +75,6 @@ done
 if [ "$PROBE" = auto ]; then
     $PLAN && PROBE=false || PROBE=true
 fi
-# The benchmark runs on the RayCluster the training step deploys.
-$BENCH && TRAIN=true
 
 set_region() {
     export REGION="$1" AWS_REGION="$1" AWS_DEFAULT_REGION="$1"
@@ -134,7 +128,7 @@ else
     echo "  Search:       $($ALL_REGIONS && echo "all enabled Regions" || echo "$REGIONS")"
     echo "  Probe:        $($PROBE && echo "yes: a Capacity Reservation per candidate AZ, cancelled immediately" || echo "no: rank on quota only")"
 fi
-echo "  Then:         cluster -> GPU node group -> device plugins -> KubeRay$($TRAIN && echo " -> training job")$($BENCH && echo " -> EFA vs TCP benchmark")"
+echo "  Then:         cluster -> GPU node group -> device plugins -> KubeRay$($TRAIN && echo " -> training job")"
 $PLAN && echo "  Mode:         plan only (nothing is created)"
 echo
 
@@ -211,7 +205,6 @@ if $PLAN; then
     done
     echo "    bash install_gpu_plugins.sh && bash install_kuberay.sh"
     $TRAIN && echo "    bash deploy_ray_train_job.sh"
-    $BENCH && echo "    bash benchmark_efa_vs_tcp.sh"
     $PROBE || echo -e "\n  Capacity was not checked. The real run probes each AZ unless you pass --no-probe."
     exit 0
 fi
@@ -286,15 +279,11 @@ step 4 "KubeRay operator" install_kuberay.sh
 if $TRAIN; then
     step 5 "RayCluster + training job" deploy_ray_train_job.sh
 fi
-if $BENCH; then
-    step 6 "EFA vs TCP benchmark" benchmark_efa_vs_tcp.sh
-fi
 
 # ------------------------------------------------------------------ summary
 print_section "Done"
 print_success "Region ${REGION}, GPU AZ ${GPU_AZ}, ${GPU_NODE_COUNT} x ${GPU_NODE_TYPE}"
 $TRAIN || echo "  Run the training job:     bash deploy_ray_train_job.sh"
-$BENCH || echo "  Measure EFA vs TCP:       bash benchmark_efa_vs_tcp.sh"
 echo "  Tear down (reverse order, same Region via .placement.env):"
 echo "    bash delete_ray_train_job.sh && bash install_kuberay.sh cleanup && \\"
 echo "    bash install_gpu_plugins.sh cleanup && bash delete_node_group.sh && bash delete_cluster.sh"
