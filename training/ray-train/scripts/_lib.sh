@@ -153,6 +153,32 @@ resolve_gpu_subnet() {
     echo "$subnet"
 }
 
+# Validates $1 as a usable On-Demand Capacity Reservation and echoes its AZ.
+resolve_capacity_reservation() {
+    local id="$1" info state itype az avail
+    info=$(aws ec2 describe-capacity-reservations --region "$REGION" --capacity-reservation-ids "$id" \
+        --query 'CapacityReservations[0].[State,InstanceType,AvailabilityZone,AvailableInstanceCount]' \
+        --output text 2>/dev/null) || true
+    if [ -z "$info" ] || [ "$info" = "None" ]; then
+        print_error "Capacity reservation '$id' not found in $REGION. Set REGION to the reservation's Region."
+        exit 1
+    fi
+    read -r state itype az avail <<< "$info"
+    if [ "$state" != "active" ]; then
+        print_error "Capacity reservation '$id' is '$state', not 'active'."
+        exit 1
+    fi
+    if [ "$itype" != "$GPU_NODE_TYPE" ]; then
+        print_error "Capacity reservation '$id' is for $itype, but GPU_NODE_TYPE is $GPU_NODE_TYPE."
+        exit 1
+    fi
+    if [ "$avail" -lt "$GPU_NODE_COUNT" ]; then
+        print_error "Capacity reservation '$id' has $avail instance(s) available, but GPU_NODE_COUNT is $GPU_NODE_COUNT."
+        exit 1
+    fi
+    echo "$az"
+}
+
 wait_for_no_active_update() {
     local max_wait=300 waited=0 update_id update_status
     while [ "$waited" -lt "$max_wait" ]; do

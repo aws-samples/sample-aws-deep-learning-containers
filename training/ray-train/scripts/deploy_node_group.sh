@@ -58,6 +58,11 @@ confirm
 
 check_prerequisites
 
+if [ -n "$CAPACITY_RESERVATION_ID" ]; then
+    GPU_AZ=$(resolve_capacity_reservation "$CAPACITY_RESERVATION_ID")
+    print_success "Capacity reservation $CAPACITY_RESERVATION_ID: ${GPU_NODE_TYPE} in ${GPU_AZ}"
+fi
+
 AZ_WAS_SET=${GPU_AZ:+yes}
 GPU_AZ=$(resolve_gpu_az)
 # Resolved from the cluster's own VPC, not re-derived from the AZ name --
@@ -94,6 +99,11 @@ case "$NODEGROUP_STATUS" in
         echo "Creating ${GPU_NODE_COUNT}x ${GPU_NODE_TYPE} node(s) in ${GPU_AZ} (subnet ${GPU_SUBNET})..."
         wait_for_no_active_update
 
+        CR_BLOCK=""
+        [ -n "$CAPACITY_RESERVATION_ID" ] && CR_BLOCK="    capacityReservation:
+      capacityReservationTarget:
+        capacityReservationID: ${CAPACITY_RESERVATION_ID}"
+
         # efaEnabled has no eksctl CLI flag, so this needs a config file.
         NODEGROUP_CONFIG=$(mktemp)
         cat > "$NODEGROUP_CONFIG" << EOF
@@ -126,6 +136,7 @@ managedNodeGroups:
       # DaemonSet sits at DESIRED 0 with no error anywhere, and
       # nvidia.com/gpu never becomes allocatable.
       nvidia.com/gpu.present: "true"
+${CR_BLOCK}
 EOF
         eksctl create nodegroup -f "$NODEGROUP_CONFIG"
         rm -f "$NODEGROUP_CONFIG"

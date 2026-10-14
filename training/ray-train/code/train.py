@@ -13,7 +13,6 @@ What this proves, and what it deliberately does not:
 
 Submitted via ``deploy_ray_train_job.sh``, which runs the equivalent of:
     ray job submit --address http://localhost:8265 --working-dir . \\
-        --runtime-env-json '{"pip": ["transformers==4.46.3"]}' \\
         -- python3 train.py --model_id Qwen/Qwen2.5-1.5B
 """
 
@@ -87,7 +86,7 @@ def train_func(config):
     device = ray.train.torch.get_device()
     logger.info(f"[train] rank={rank} world_size={world_size} device={device}")
 
-    model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch.bfloat16)
+    model = AutoModelForCausalLM.from_pretrained(model_id, dtype=torch.bfloat16)
     vocab_size = model.config.vocab_size
 
     # size_based_auto_wrap_policy (rather than a model-specific transformer
@@ -99,6 +98,7 @@ def train_func(config):
         parallel_strategy_kwargs={"auto_wrap_policy": auto_wrap_policy},
     )
 
+    model.train()
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
     torch.cuda.reset_peak_memory_stats(device)
 

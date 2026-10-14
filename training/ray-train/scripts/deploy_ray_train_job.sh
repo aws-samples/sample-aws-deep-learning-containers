@@ -103,8 +103,8 @@ kubectl wait --for=condition=Ready pod \
     -l "ray.io/cluster=${RAY_CLUSTER_NAME},ray.io/node-type=head" \
     -n "$NAMESPACE" --timeout="${TIMEOUT_READY}s"
 
-echo "Worker pods reaching Running (one per GPU node)..."
-kubectl wait --for=jsonpath='{.status.phase}=Running' pod \
+echo "Worker pods becoming Ready (one per GPU node)..."
+kubectl wait --for=condition=Ready pod \
     -l "ray.io/cluster=${RAY_CLUSTER_NAME},ray.io/node-type=worker" \
     -n "$NAMESPACE" --timeout="${TIMEOUT_READY}s"
 
@@ -130,15 +130,14 @@ echo "FSDP shards $MODEL_ID's parameters, gradients, and optimizer state across 
 echo "any all-gather/reduce-scatter between a rank on one node and a rank on the other crosses over EFA."
 set +e
 kubectl exec "$HEAD_POD" -n "$NAMESPACE" -c ray-head -- \
-    ray job submit --address http://localhost:8265 --working-dir "$REMOTE_CODE_DIR" \
-    --runtime-env-json '{"pip": ["transformers==4.46.3"]}' -- \
+    ray job submit --address http://localhost:8265 --working-dir "$REMOTE_CODE_DIR" -- \
     python3 train.py \
         --model_id "$MODEL_ID" \
         --steps "$STEPS" \
         --seq_len "$SEQ_LEN" \
         --batch_size "$BATCH_SIZE" \
         --learning_rate "$LEARNING_RATE" \
-        --num_workers "$NUM_WORKERS"
+        --num_workers "$([ "$NUM_WORKERS" -gt 0 ] && echo "$NUM_WORKERS" || echo "$TOTAL_GPUS")"
 JOB_EXIT_CODE=$?
 set -e
 

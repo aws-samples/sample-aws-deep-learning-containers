@@ -38,6 +38,10 @@ nodes_advertising() {
         | grep -cE '^[1-9]' || true
 }
 
+plugin_present() {
+    kubectl get ds -n kube-system -o name 2>/dev/null | grep -qE "/${1}(-daemonset)?\$"
+}
+
 cleanup() {
     print_section "Uninstalling GPU Device Plugins"
     helm uninstall nvidia-device-plugin -n kube-system 2>/dev/null || true
@@ -69,6 +73,8 @@ helm repo update >/dev/null 2>&1 || true
 print_section "Installing NVIDIA device plugin"
 if [ "$(nodes_advertising 'nvidia\.com/gpu')" -ge "$GPU_NODE_COUNT" ]; then
     print_success "nvidia.com/gpu already advertised on all $GPU_NODE_COUNT node(s) (eksctl-bundled or prior run) -- skipping"
+elif plugin_present nvidia-device-plugin; then
+    print_success "NVIDIA device plugin DaemonSet already present (eksctl-bundled) -- skipping"
 elif helm status nvidia-device-plugin -n kube-system &>/dev/null; then
     print_success "NVIDIA device plugin Helm release already present"
 else
@@ -84,6 +90,8 @@ fi
 print_section "Installing AWS EFA device plugin"
 if [ "$(nodes_advertising 'vpc\.amazonaws\.com/efa')" -ge "$GPU_NODE_COUNT" ]; then
     print_success "vpc.amazonaws.com/efa already advertised on all $GPU_NODE_COUNT node(s) (eksctl-bundled or prior run) -- skipping"
+elif plugin_present aws-efa-k8s-device-plugin; then
+    print_success "AWS EFA device plugin DaemonSet already present (eksctl-bundled) -- skipping"
 elif helm status aws-efa-k8s-device-plugin -n kube-system &>/dev/null; then
     print_success "AWS EFA device plugin Helm release already present"
 else

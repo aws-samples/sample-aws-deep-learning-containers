@@ -116,9 +116,10 @@ shell or AWS CLI profile has.
 | GPU_NODE_COUNT | 2 | Number of GPU worker nodes |
 | GPUS_PER_NODE | 4 | GPUs per `GPU_NODE_TYPE` -- must match the instance type if you change it |
 | GPU_NODEGROUP_NAME | gpu-workers | Name of the GPU node group |
+| CAPACITY_RESERVATION_ID | _(empty)_ | An existing On-Demand Capacity Reservation to launch the GPU nodes into, e.g. `cr-0123456789abcdef0`. The node group targets it, its AZ is used, and the capacity search is skipped. Validated for state, instance type and available count; `REGION` must be the reservation's Region |
 | GPU_AZ | _(auto)_ | AZ for the GPU node group. Auto-picked from AZs that both offer `GPU_NODE_TYPE` *and* already have a cluster private subnet; if set explicitly, validated against that same intersection and rejected with a reason otherwise |
 | ASSUME_YES | _(empty)_ | Set to `1` to skip the "Proceed? (y/N)" prompt in `deploy_cluster.sh`/`deploy_node_group.sh`. Set by `deploy_all.sh` (and by `find_gpu_capacity.sh` when you accept its deploy offer) after their own single prompt -- not something you normally set by hand |
-| DLC_IMAGE | public.ecr.aws/deep-learning-containers/ray:train-ml-cuda | Ray Train DLC image |
+| DLC_IMAGE | public.ecr.aws/deep-learning-containers/ray:train-ml-cuda-v1.1 | Ray Train DLC image |
 | KUBERAY_VERSION | 1.4.0 | KubeRay operator version |
 | RAY_VERSION | 2.58.0 | Ray version (must match the image) |
 | NVIDIA_DEVICE_PLUGIN_VERSION | 0.20.0 | NVIDIA device plugin Helm chart version |
@@ -292,8 +293,7 @@ Running, copies `code/` onto the head pod, then runs:
 
 ```bash
 kubectl exec <head-pod> -n ray-train -c ray-head -- \
-    ray job submit --address http://localhost:8265 --working-dir /tmp/ray-train-code \
-    --runtime-env-json '{"pip": ["transformers==4.46.3"]}' -- \
+    ray job submit --address http://localhost:8265 --working-dir /tmp/ray-train-code -- \
     python3 train.py --model_id Qwen/Qwen2.5-1.5B --steps 5 --seq_len 128 \
         --batch_size 1 --learning_rate 0.00002 --num_workers 0
 ```
