@@ -37,7 +37,7 @@ former; it is not evidence of the latter, and this README does not claim it.
 
 **On performance:** this sample verifies that EFA carries the job, not that
 EFA makes it faster. At this scale (2x `g6.12xlarge`, a 1.5B model), NCCL over
-TCP sockets tuned with `NCCL_SOCKET_NTHREAD=4` and `NCCL_NSOCKS_PERTHREAD=4`
+TCP sockets tuned with `NCCL_SOCKET_NTHREADS=4` and `NCCL_NSOCKS_PERTHREAD=4`
 performs about the same as EFA, so don't expect a measurable speedup here.
 
 ## What this sample builds
