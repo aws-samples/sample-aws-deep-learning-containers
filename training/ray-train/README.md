@@ -35,6 +35,11 @@ GPUDirect RDMA (the NIC DMA'ing straight into GPU memory) -- that requires
 `p4d`/`p4de`/`p5`/`p5e`/`p5en`/`p6`/`trn1`. Criterion 5 above confirms the
 former; it is not evidence of the latter, and this README does not claim it.
 
+**On performance:** this sample verifies that EFA carries the job, not that
+EFA makes it faster. At this scale (2x `g6.12xlarge`, a 1.5B model), NCCL over
+TCP sockets tuned with `NCCL_SOCKET_NTHREADS=4` and `NCCL_NSOCKS_PERTHREAD=4`
+performs about the same as EFA, so don't expect a measurable speedup here.
+
 ## What this sample builds
 
 Two `g6.12xlarge` GPU worker nodes (4x NVIDIA L4, 48 vCPU, 192 GiB, 1 EFA
@@ -127,8 +132,6 @@ shell or AWS CLI profile has.
 | BATCH_SIZE | 1 | Per-worker batch size |
 | LEARNING_RATE | 0.00002 | Optimizer learning rate |
 | NUM_WORKERS | 0 | Ray Train workers; 0 = auto-size to the cluster's GPU count (8) |
-| BENCH_STEPS | 20 | Steps per run for `benchmark_efa_vs_tcp.sh` (larger than STEPS for a stable steps/sec) |
-| BENCH_WARMUP_STEPS | 3 | Leading steps timed but excluded from the benchmark's steps/sec (warm-up costs) |
 
 ## Quickstart: build the infrastructure, then run the job
 
@@ -164,11 +167,9 @@ already-`ACTIVE` GPU node group is reused rather than searched for again.
 
 ```bash
 ./deploy_ray_train_job.sh
-./benchmark_efa_vs_tcp.sh                        # optional: EFA vs TCP throughput
 ```
 
-To do both in one go, pass `--train` (the job too) or `--benchmark` (the job
-and the benchmark) to `deploy_all.sh`.
+To do both in one go, pass `--train` to `deploy_all.sh`.
 
 Run each step by hand instead with the step-by-step section below.
 
@@ -381,60 +382,11 @@ provider: efa
     type: FI_EP_RDM
 ```
 
-## Benchmark: EFA/RDMA vs TCP
-
-The checks above confirm EFA *carries* the job; this measures how much faster
-that makes it. Once the RayCluster is running (after `deploy_ray_train_job.sh`
-has run at least once), from `scripts/`:
-
-```bash
-./benchmark_efa_vs_tcp.sh
-```
-
-It runs the same FSDP job twice on the same cluster, changing only the NCCL
-transport for the cross-node collectives:
-
-| Run | Transport env | Collectives ride |
-| --- | --- | --- |
-| EFA | `FI_PROVIDER=efa`, `NCCL_NET_PLUGIN=ofi` | EFA / RDMA |
-| TCP | `NCCL_NET=Socket`, `FI_PROVIDER=tcp` | TCP over `eth0` |
-
-Same nodes, same model, same steps, so the steps/sec difference is the
-transport. FSDP's cross-node all-gather/reduce-scatter is exactly the traffic
-EFA accelerates, so the gap shows even on a short run (`BENCH_STEPS` steps, the
-first `BENCH_WARMUP_STEPS` discarded). The script verifies from each run's
-worker logs that the intended transport actually engaged before comparing --
-otherwise a silent socket fallback would look like a valid run -- then averages
-the per-rank `steps_per_sec` and prints the speedup.
-
-Example result (2x `g6.12xlarge`, `Qwen/Qwen2.5-1.5B`, `WORLD_SIZE=8`, 20 steps):
-
-```
-=== Results: EFA/RDMA vs TCP ===
-  TCP (sockets, baseline)    0.2513 steps/sec
-  EFA / RDMA                 0.5173 steps/sec
-
-  EFA/RDMA speedup vs TCP: 2.06x
-```
-
-EFA/RDMA roughly doubled throughput here. The multiple grows with model size,
-batch size, and sequence length -- anything that puts more bytes on the
-cross-node collectives -- and on GPUDirect-capable instances (`p4d`/`p5`).
-
-Raw per-rank throughput is in the Ray session logs inside a worker pod:
-
-```bash
-WPOD=$(kubectl get pod -n ray-train -l ray.io/node-type=worker -o jsonpath='{.items[0].metadata.name}')
-kubectl exec "$WPOD" -n ray-train -c ray-worker -- \
-  bash -c 'grep -rh "\[train\] THROUGHPUT" /tmp/ray/session_*/logs/'
-```
-
 ## Beyond this sample
 
 - **True GPUDirect RDMA.** Swap `GPU_NODE_TYPE`/`GPUS_PER_NODE` for a
   `p4d`/`p4de`/`p5`/`p5e`/`p5en`/`p6`/`trn1` instance to exercise transfers
-  straight into GPU memory. Everything else in this sample is unchanged;
-  only the EFA-vs-TCP bandwidth gap becomes far larger than on `g6`.
+  straight into GPU memory. Everything else in this sample is unchanged.
 - **Placement group.** This sample pins the GPU node group to a single,
   explicitly-resolved AZ, which is EFA's real requirement. A cluster
   placement group additionally tightens physical proximity within that AZ
@@ -477,7 +429,7 @@ sample). Tear down when not actively working with it.
 | Action | Command |
 | --- | --- |
 | Build all infrastructure (stops after KubeRay) | `./deploy_all.sh [-r "regions"] [--plan] [-y]` |
-| Build infrastructure + run the job (+ benchmark) | `./deploy_all.sh --train` / `./deploy_all.sh --benchmark` |
+| Build infrastructure + run the job | `./deploy_all.sh --train` |
 | Deploy cluster | `./deploy_cluster.sh` |
 | Find an AZ with GPU quota/capacity | `./find_gpu_capacity.sh [-r "regions"] [--probe]` |
 | Deploy GPU nodes | `./deploy_node_group.sh` |
@@ -485,7 +437,6 @@ sample). Tear down when not actively working with it.
 | Install KubeRay | `./install_kuberay.sh` |
 | Deploy RayCluster + run training job | `./deploy_ray_train_job.sh` |
 | Check status | `./deploy_ray_train_job.sh status` |
-| Benchmark EFA/RDMA vs TCP | `./benchmark_efa_vs_tcp.sh` |
 | Delete RayCluster | `./delete_ray_train_job.sh` |
 | Uninstall KubeRay | `./install_kuberay.sh cleanup` |
 | Uninstall GPU device plugins | `./install_gpu_plugins.sh cleanup` |

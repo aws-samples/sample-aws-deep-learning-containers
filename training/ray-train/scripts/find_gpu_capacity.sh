@@ -325,7 +325,6 @@ if ! $NO_OFFER && [ -n "$BEST" ] && [ "$BSUB" != "NO" ]; then
         echo "Next, from scripts/ (REGION is not saved by this script, so keep it exported):"
         echo "  export REGION=${REGION}"
         echo "  bash deploy_ray_train_job.sh    # applies the RayCluster and runs the training job"
-        echo "  bash benchmark_efa_vs_tcp.sh    # EFA vs TCP throughput, once the RayCluster is running"
     else
         echo "Skipped. Re-run manually when ready:"
         echo "  export REGION=${BR} GPU_AZ=${BAZ}"
